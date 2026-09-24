@@ -1,0 +1,4 @@
+$kind: collection
+name: Job Applications
+description: CRUD operations for job application records (`/applications`).
+order: 1000

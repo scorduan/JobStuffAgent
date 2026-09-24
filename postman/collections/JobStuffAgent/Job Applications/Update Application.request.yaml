@@ -1,0 +1,42 @@
+$kind: http-request
+method: PUT
+url: '{{baseUrl}}/applications/{{applicationId}}'
+order: 4000
+description: |-
+  Replace the opportunity information (company, role, sourceUrl) of an existing job application.
+
+  **Required fields:** `company` (non-blank), `role` (non-blank).
+  **Optional field:** `sourceUrl` (URI string).
+
+  Returns `200 OK` with the updated `JobApplicationResponse`, or `404 Not Found`.
+  Requires `APPLICATIONS_MANAGER` role.
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Accept
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "company": "Acme Corp",
+      "role": "Staff Software Engineer",
+      "sourceUrl": "https://jobs.acme.com/posting/12345"
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status code is 200 OK", function () {
+          pm.response.to.have.status(200);
+      });
+
+      pm.test("Response body contains updated role", function () {
+          const json = pm.response.json();
+          pm.expect(json.role).to.eql("Staff Software Engineer");
+      });
+
+      pm.test("Response body contains id", function () {
+          const json = pm.response.json();
+          pm.expect(json).to.have.property("id");
+      });

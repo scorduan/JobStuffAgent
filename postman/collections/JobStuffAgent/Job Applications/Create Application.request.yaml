@@ -1,0 +1,59 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/applications'
+order: 1000
+description: |-
+  Create a new job application record.
+
+  **Required fields:** `company` (non-blank), `role` (non-blank).
+  **Optional field:** `sourceUrl` (URI string).
+
+  Returns `201 Created` with a `Location` header pointing to the new resource and the full `JobApplicationResponse` body.
+  The after-response script captures the new `id` into the `applicationId` collection variable for use in subsequent requests.
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Accept
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "company": "Acme Corp",
+      "role": "Senior Software Engineer",
+      "sourceUrl": "https://jobs.acme.com/posting/12345"
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status code is 201 Created", function () {
+          pm.response.to.have.status(201);
+      });
+
+      pm.test("Response has Location header", function () {
+          pm.response.to.have.header("Location");
+      });
+
+      pm.test("Response body contains id", function () {
+          const json = pm.response.json();
+          pm.expect(json).to.have.property("id");
+          pm.expect(json.id).to.be.a("string");
+      });
+
+      pm.test("Response body contains company and role", function () {
+          const json = pm.response.json();
+          pm.expect(json.company).to.eql("Acme Corp");
+          pm.expect(json.role).to.eql("Senior Software Engineer");
+      });
+
+      pm.test("Initial status is RECOMMENDED", function () {
+          const json = pm.response.json();
+          pm.expect(json.status).to.eql("RECOMMENDED");
+      });
+
+      // Capture the new application id for downstream requests
+      if (pm.response.code === 201) {
+          const json = pm.response.json();
+          pm.collectionVariables.set("applicationId", json.id);
+      }

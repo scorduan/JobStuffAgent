@@ -1,0 +1,4 @@
+$kind: collection
+name: Health
+description: Spring Boot Actuator health endpoints. No authentication required.
+order: 3000

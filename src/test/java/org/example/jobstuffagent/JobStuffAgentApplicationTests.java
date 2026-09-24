@@ -13,6 +13,7 @@ class JobStuffAgentApplicationTests {
 
     @Test
     void contextLoads() {
+        // Intentionally Empty as a smoke test
     }
 
 }
