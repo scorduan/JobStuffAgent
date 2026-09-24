@@ -1,0 +1,30 @@
+$kind: collection
+name: JobStuffAgent API
+description: |-
+  REST API for the JobStuffAgent application — a job-application lifecycle tracker.
+
+  **Authentication:** HTTP Basic. Two roles are supported:
+  - `APPLICATIONS_READ_ONLY` — may call GET endpoints on `/applications/**`
+  - `APPLICATIONS_MANAGER` — may call all methods on `/applications/**` and `/workflows/**`
+
+  Set the `basicUsername` and `basicPassword` collection variables (or override them in an environment) before running requests.
+variables:
+  - key: baseUrl
+    value: 'http://localhost:8080'
+    description: Root URL of the running JobStuffAgent service.
+  - key: basicUsername
+    value: manager
+    description: HTTP Basic username (APPLICATIONS_MANAGER role recommended for write operations).
+  - key: basicPassword
+    value: ''
+    description: HTTP Basic password. Keep blank here; set the real value in an environment or as a secret.
+  - key: applicationId
+    value: ''
+    description: UUID of a job application — populated automatically by the "Create Application" after-response script.
+auth:
+  type: basic
+  credentials:
+    - key: username
+      value: '{{basicUsername}}'
+    - key: password
+      value: '{{basicPassword}}'

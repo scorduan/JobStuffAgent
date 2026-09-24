@@ -1,0 +1,34 @@
+$kind: http-request
+method: GET
+url: '{{baseUrl}}/applications'
+order: 2000
+description: |-
+  Retrieve all job application records.
+
+  Returns `200 OK` with a JSON array of `JobApplicationResponse` objects.
+  Accessible to both `APPLICATIONS_READ_ONLY` and `APPLICATIONS_MANAGER` roles.
+headers:
+  - key: Accept
+    value: application/json
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status code is 200 OK", function () {
+          pm.response.to.have.status(200);
+      });
+
+      pm.test("Response is a JSON array", function () {
+          const json = pm.response.json();
+          pm.expect(json).to.be.an("array");
+      });
+
+      pm.test("Each item has required fields", function () {
+          const json = pm.response.json();
+          json.forEach(function (item) {
+              pm.expect(item).to.have.property("id");
+              pm.expect(item).to.have.property("company");
+              pm.expect(item).to.have.property("role");
+              pm.expect(item).to.have.property("status");
+          });
+      });

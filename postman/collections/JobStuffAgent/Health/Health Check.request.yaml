@@ -1,0 +1,26 @@
+$kind: http-request
+method: GET
+url: '{{baseUrl}}/actuator/health'
+order: 1000
+description: |-
+  Spring Boot Actuator health endpoint.
+
+  Returns `200 OK` with a JSON body containing the application health status.
+  This endpoint is publicly accessible — no authentication required.
+auth:
+  type: noauth
+headers:
+  - key: Accept
+    value: application/json
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status code is 200 OK", function () {
+          pm.response.to.have.status(200);
+      });
+
+      pm.test("Health status is UP", function () {
+          const json = pm.response.json();
+          pm.expect(json.status).to.eql("UP");
+      });

@@ -1,0 +1,4 @@
+$kind: collection
+name: Workflows
+description: Workflow agent session management (`/workflows`). Requires `APPLICATIONS_MANAGER` role.
+order: 2000

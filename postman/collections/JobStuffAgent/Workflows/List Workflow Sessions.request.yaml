@@ -1,0 +1,19 @@
+$kind: http-request
+method: GET
+url: '{{baseUrl}}/workflows'
+order: 1000
+description: |-
+  List active workflow agent sessions.
+
+  Returns `200 OK`. Currently returns a placeholder string while the workflow feature is under development.
+  Requires authentication (any authenticated user).
+headers:
+  - key: Accept
+    value: application/json
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status code is 200 OK", function () {
+          pm.response.to.have.status(200);
+      });

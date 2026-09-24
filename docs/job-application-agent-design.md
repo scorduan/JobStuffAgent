@@ -19,6 +19,7 @@ This is deliberately not a general autonomous job-search platform. The initial s
 - **Rules live near the state they protect.** A job application owns legal lifecycle transitions; an orchestration service coordinates a workflow across multiple objects.
 - **Start with explicit types and simple behavior.** Prefer small records and classes over speculative inheritance hierarchies or generic frameworks.
 - **Preserve an audit trail.** State changes and executed tools should be explainable after the fact.
+- **Secure each layer deliberately.** Authentication and coarse endpoint authorization happen at the HTTP boundary; business authorization is also enforced at application-service boundaries.
 
 ## Conceptual model
 
@@ -235,7 +236,7 @@ Use request/response DTOs at the web boundary. Do not expose domain entities as 
 ## Phased implementation
 
 1. Implement `ApplicationStatus`, `JobApplication`, and unit tests for legal and illegal lifecycle transitions. Include a table-driven test of every supported transition command from every reachable state, not only representative happy paths. No LLM, persistence, or conversation handling is required.
-2. Add an in-memory application repository and a deterministic `JobApplicationService` for basic CRUD and lookup. Wire it to the REST adapter with request/response DTOs so the controller delegates to the service rather than holding business logic.
+2. Add an in-memory application repository and a deterministic `JobApplicationService` for basic CRUD and lookup. The server allocates UUIDs; creation requests never supply authoritative IDs. Wire it to the REST adapter with request/response DTOs so the controller delegates to the service rather than holding business logic.
 3. Add a minimal `Conversation` and `AgentSession` with a deterministic classifier stub that can ask for clarification or select records. Wire the existing workflow endpoint to `AgentWorkflowService` at this point.
 4. Add structured proposal validation and deterministic tool execution.
 5. Integrate an LLM for one semantic decision boundary only, then add persistence and execution-history records as the workflow requires them.
@@ -251,6 +252,12 @@ HTTP JSON → request DTO → controller → application service → domain obje
 ```
 
 Phase 1 domain tests should construct domain objects directly, without Spring. In phase 2, controller tests verify the HTTP contract and application-service tests verify use-case behavior. The controller translates HTTP concerns (routing, JSON, validation, status codes) into an application-service call; `JobApplication` continues to enforce its own lifecycle rules. When the agent workflow arrives in phase 3, `WorkflowAgentController` similarly delegates to `AgentWorkflowService` rather than coordinating model calls itself.
+
+### Phase 2 security baseline
+
+The initial API uses a stateless HTTP Basic authentication baseline for local development. Usernames and passwords are supplied only through `APP_SECURITY_READ_ONLY_USERNAME`, `APP_SECURITY_READ_ONLY_PASSWORD`, `APP_SECURITY_MANAGER_USERNAME`, and `APP_SECURITY_MANAGER_PASSWORD`; no reusable credential is committed. The hard-coded `APPLICATIONS_READ_ONLY` role can read applications. The `APPLICATIONS_MANAGER` role can perform full application CRUD. Health checks remain public.
+
+The endpoint rules provide coarse HTTP protection. Service methods also require the corresponding role through method security, so future callers such as an agent tool or scheduled task do not bypass business authorization merely by avoiding a controller. OAuth/OIDC is deliberately deferred: an Okta or Cognito JWT resource-server configuration should replace the local user source later while retaining the role names and service-level rules.
 
 ## Change protocol
 

@@ -1,0 +1,25 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/workflows'
+order: 2000
+description: |-
+  Trigger execution of the workflow agent.
+
+  Returns `200 OK`. Currently returns a placeholder string while the workflow feature is under development.
+  Requires authentication (any authenticated user).
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Accept
+    value: application/json
+body:
+  type: json
+  content: |-
+    {}
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status code is 200 OK", function () {
+          pm.response.to.have.status(200);
+      });

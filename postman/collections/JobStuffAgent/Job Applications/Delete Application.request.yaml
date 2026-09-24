@@ -1,0 +1,20 @@
+$kind: http-request
+method: DELETE
+url: '{{baseUrl}}/applications/{{applicationId}}'
+order: 5000
+description: |-
+  Delete a job application by its UUID.
+
+  Returns `204 No Content` on success, or `404 Not Found` if the id does not exist.
+  Requires `APPLICATIONS_MANAGER` role.
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status code is 204 No Content", function () {
+          pm.response.to.have.status(204);
+      });
+
+      pm.test("Response body is empty", function () {
+          pm.expect(pm.response.text()).to.be.empty;
+      });
