@@ -70,50 +70,74 @@ public final class JobApplication {
     }
 
     public void markApplied(LocalDate effectiveDate, String source, String note) {
-        transitionTo(ApplicationStatus.APPLIED, effectiveDate, source, note);
+        verifyTransitionTo(ApplicationStatus.APPLIED, ApplicationStatus.RECOMMENDED);
+        recordTransition(ApplicationStatus.APPLIED, effectiveDate, source, note);
     }
 
     public void beginInterviewing(LocalDate effectiveDate, String source, String note) {
-        transitionTo(ApplicationStatus.INTERVIEWING, effectiveDate, source, note);
+        verifyTransitionTo(
+                ApplicationStatus.INTERVIEWING,
+                ApplicationStatus.APPLIED,
+                ApplicationStatus.STALE,
+                ApplicationStatus.PRESUMED_DEAD);
+        recordTransition(ApplicationStatus.INTERVIEWING, effectiveDate, source, note);
     }
 
     public void recordOffer(LocalDate effectiveDate, String source, String note) {
-        transitionTo(ApplicationStatus.OFFERED, effectiveDate, source, note);
+        verifyTransitionTo(ApplicationStatus.OFFERED, ApplicationStatus.INTERVIEWING);
+        recordTransition(ApplicationStatus.OFFERED, effectiveDate, source, note);
     }
 
     public void accept(LocalDate effectiveDate, String source, String note) {
-        transitionTo(ApplicationStatus.ACCEPTED, effectiveDate, source, note);
+        verifyTransitionTo(ApplicationStatus.ACCEPTED, ApplicationStatus.OFFERED);
+        recordTransition(ApplicationStatus.ACCEPTED, effectiveDate, source, note);
     }
 
     public void decline(LocalDate effectiveDate, String source, String note) {
-        transitionTo(ApplicationStatus.DECLINED, effectiveDate, source, note);
+        verifyTransitionTo(ApplicationStatus.DECLINED, ApplicationStatus.OFFERED);
+        recordTransition(ApplicationStatus.DECLINED, effectiveDate, source, note);
     }
 
     public void reject(LocalDate effectiveDate, String source, String note) {
-        transitionTo(ApplicationStatus.REJECTED, effectiveDate, source, note);
+        verifyTransitionTo(
+                ApplicationStatus.REJECTED,
+                ApplicationStatus.APPLIED,
+                ApplicationStatus.INTERVIEWING,
+                ApplicationStatus.OFFERED,
+                ApplicationStatus.STALE,
+                ApplicationStatus.PRESUMED_DEAD);
+        recordTransition(ApplicationStatus.REJECTED, effectiveDate, source, note);
     }
 
     public void markStale(LocalDate effectiveDate, String source, String note) {
-        transitionTo(ApplicationStatus.STALE, effectiveDate, source, note);
+        verifyTransitionTo(ApplicationStatus.STALE, ApplicationStatus.APPLIED);
+        recordTransition(ApplicationStatus.STALE, effectiveDate, source, note);
     }
 
     public void presumeDead(LocalDate effectiveDate, String source, String note) {
-        transitionTo(ApplicationStatus.PRESUMED_DEAD, effectiveDate, source, note);
+        verifyTransitionTo(ApplicationStatus.PRESUMED_DEAD, ApplicationStatus.STALE);
+        recordTransition(ApplicationStatus.PRESUMED_DEAD, effectiveDate, source, note);
     }
 
-    private void transitionTo(
+    private void verifyTransitionTo(
+            ApplicationStatus targetStatus,
+            ApplicationStatus... allowedSourceStatuses) {
+        for (ApplicationStatus allowedSourceStatus : allowedSourceStatuses) {
+            if (status == allowedSourceStatus) {
+                return;
+            }
+        }
+
+        throw new IllegalStateException(
+                "Cannot transition application from " + status + " to " + targetStatus);
+    }
+
+    private void recordTransition(
             ApplicationStatus targetStatus,
             LocalDate effectiveDate,
             String source,
             String note) {
-        Objects.requireNonNull(targetStatus, "targetStatus must not be null");
         Objects.requireNonNull(effectiveDate, "effectiveDate must not be null");
-
-        if (!isAllowed(status, targetStatus)) {
-            throw new IllegalStateException(
-                    "Cannot transition application from " + status + " to " + targetStatus);
-        }
-
         ApplicationTransition transition = new ApplicationTransition(
                 status,
                 targetStatus,
@@ -124,26 +148,6 @@ public final class JobApplication {
 
         status = targetStatus;
         transitionHistory.add(transition);
-    }
-
-    private static boolean isAllowed(ApplicationStatus currentStatus, ApplicationStatus targetStatus) {
-        return switch (currentStatus) {
-            case RECOMMENDED -> targetStatus == ApplicationStatus.APPLIED;
-            case APPLIED -> targetStatus == ApplicationStatus.INTERVIEWING
-                    || targetStatus == ApplicationStatus.STALE
-                    || targetStatus == ApplicationStatus.REJECTED;
-            case INTERVIEWING -> targetStatus == ApplicationStatus.OFFERED
-                    || targetStatus == ApplicationStatus.REJECTED;
-            case OFFERED -> targetStatus == ApplicationStatus.ACCEPTED
-                    || targetStatus == ApplicationStatus.DECLINED
-                    || targetStatus == ApplicationStatus.REJECTED;
-            case STALE -> targetStatus == ApplicationStatus.PRESUMED_DEAD
-                    || targetStatus == ApplicationStatus.INTERVIEWING
-                    || targetStatus == ApplicationStatus.REJECTED;
-            case PRESUMED_DEAD -> targetStatus == ApplicationStatus.INTERVIEWING
-                    || targetStatus == ApplicationStatus.REJECTED;
-            case ACCEPTED, DECLINED, REJECTED -> false;
-        };
     }
 
     private static String requireText(String value, String fieldName) {
