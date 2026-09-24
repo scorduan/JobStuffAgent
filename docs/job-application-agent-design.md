@@ -234,7 +234,7 @@ Use request/response DTOs at the web boundary. Do not expose domain entities as 
 
 ## Phased implementation
 
-1. Implement `ApplicationStatus`, `JobApplication`, and unit tests for legal and illegal lifecycle transitions. No LLM, persistence, or conversation handling is required.
+1. Implement `ApplicationStatus`, `JobApplication`, and unit tests for legal and illegal lifecycle transitions. Include a table-driven test of every supported transition command from every reachable state, not only representative happy paths. No LLM, persistence, or conversation handling is required.
 2. Add an in-memory application repository and a deterministic `JobApplicationService` for basic CRUD and lookup. Wire it to the REST adapter with request/response DTOs so the controller delegates to the service rather than holding business logic.
 3. Add a minimal `Conversation` and `AgentSession` with a deterministic classifier stub that can ask for clarification or select records. Wire the existing workflow endpoint to `AgentWorkflowService` at this point.
 4. Add structured proposal validation and deterministic tool execution.
