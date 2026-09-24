@@ -19,10 +19,11 @@ import java.util.UUID;
 public final class JobApplication {
 
     private final UUID id;
-    private final String company;
-    private final String role;
-    private final URI sourceUrl;
+    private String company;
+    private String role;
+    private URI sourceUrl;
     private final Instant createdAt;
+    private Instant updatedAt;
     private final Clock clock;
     private final List<ApplicationTransition> transitionHistory = new ArrayList<>();
 
@@ -39,6 +40,7 @@ public final class JobApplication {
         this.sourceUrl = sourceUrl;
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.createdAt = clock.instant();
+        this.updatedAt = createdAt;
     }
 
     public UUID id() {
@@ -61,12 +63,26 @@ public final class JobApplication {
         return createdAt;
     }
 
+    public Instant updatedAt() {
+        return updatedAt;
+    }
+
     public ApplicationStatus status() {
         return status;
     }
 
     public List<ApplicationTransition> transitionHistory() {
         return List.copyOf(transitionHistory);
+    }
+
+    /**
+     * Replaces the core opportunity information without changing lifecycle state.
+     */
+    public void updateOpportunity(String company, String role, URI sourceUrl) {
+        this.company = requireText(company, "company");
+        this.role = requireText(role, "role");
+        this.sourceUrl = sourceUrl;
+        this.updatedAt = clock.instant();
     }
 
     public void markApplied(LocalDate effectiveDate, String source, String note) {
@@ -148,6 +164,7 @@ public final class JobApplication {
 
         status = targetStatus;
         transitionHistory.add(transition);
+        updatedAt = clock.instant();
     }
 
     private static String requireText(String value, String fieldName) {
