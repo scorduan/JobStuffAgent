@@ -6,6 +6,8 @@ import org.example.jobstuffagent.application.AgentPlanningResult;
 import org.example.jobstuffagent.application.AgentSession;
 import org.example.jobstuffagent.application.AgentWorkflowService;
 import org.example.jobstuffagent.application.ApplicationLookupCriteria;
+import org.example.jobstuffagent.application.ApplicationLookupError;
+import org.example.jobstuffagent.application.ApplicationLookupErrorCode;
 import org.example.jobstuffagent.application.ApplicationLookupResult;
 import org.example.jobstuffagent.application.StartWorkflowCommand;
 import org.example.jobstuffagent.config.SecurityConfiguration;
@@ -105,6 +107,42 @@ class WorkflowAgentControllerTests {
                 "List my applications"));
     }
 
+    @Test
+    void returnsClassificationQuestionsToTheUi() throws Exception {
+        AgentSession session = classificationNeedingInputSession();
+        when(agentWorkflowService.start(any(StartWorkflowCommand.class))).thenReturn(Optional.of(session));
+
+        mockMvc.perform(post("/workflows")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .with(httpBasic("reader-user", "reader-password"))
+                        .content("""
+                                { "prompt": "What should I do next?" }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("COMPLETED_NEEDS_INPUT"))
+                .andExpect(jsonPath("$.stateHistory[2]").value("COMPLETED_NEEDS_INPUT"))
+                .andExpect(jsonPath("$.questions[0]")
+                        .value("Which application do you mean? Please include the company or role."));
+    }
+
+    @Test
+    void returnsPlanningQuestionsAndLookupErrorsToTheUi() throws Exception {
+        AgentSession session = planningNeedingInputSession();
+        when(agentWorkflowService.start(any(StartWorkflowCommand.class))).thenReturn(Optional.of(session));
+
+        mockMvc.perform(post("/workflows")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .with(httpBasic("reader-user", "reader-password"))
+                        .content("""
+                                { "prompt": "What is the status of my Missing Co. application?" }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("COMPLETED_NEEDS_INPUT"))
+                .andExpect(jsonPath("$.stateHistory[4]").value("COMPLETED_NEEDS_INPUT"))
+                .andExpect(jsonPath("$.lookupErrors[0].code").value("NO_MATCH"))
+                .andExpect(jsonPath("$.questions[0]").value("No application matched the lookup criteria."));
+    }
+
     private AgentSession completedSession() {
         AgentSession session = new AgentSession(
                 SESSION_ID,
@@ -127,6 +165,48 @@ class WorkflowAgentControllerTests {
         session.completePlanning(new AgentPlanningResult(List.of(), "Found 0 application(s)."), CLOCK.instant());
         session.completeValidation();
         session.completeExecution(lookupResult, CLOCK.instant());
+        return session;
+    }
+
+    private AgentSession classificationNeedingInputSession() {
+        AgentSession session = new AgentSession(
+                SESSION_ID,
+                CONVERSATION_ID,
+                "What should I do next?",
+                CLOCK.instant());
+        session.beginClassification();
+        session.completeClassification(new AgentClassification(
+                AgentIntent.UNKNOWN,
+                ApplicationLookupCriteria.none(),
+                List.of("Which application do you mean? Please include the company or role."),
+                "More information is required to identify an application."), CLOCK.instant());
+        return session;
+    }
+
+    private AgentSession planningNeedingInputSession() {
+        AgentSession session = new AgentSession(
+                SESSION_ID,
+                CONVERSATION_ID,
+                "What is the status of my Missing Co. application?",
+                CLOCK.instant());
+        AgentClassification classification = new AgentClassification(
+                AgentIntent.LOOK_UP_APPLICATION,
+                new ApplicationLookupCriteria("Missing Co", null),
+                List.of(),
+                "The request is to look up one application.");
+        ApplicationLookupResult lookupResult = new ApplicationLookupResult(
+                classification,
+                List.of(),
+                List.of(new ApplicationLookupError(
+                        ApplicationLookupErrorCode.NO_MATCH,
+                        "No application matched the lookup criteria.")),
+                "No application matched the lookup criteria.");
+        session.beginClassification();
+        session.completeClassification(classification, CLOCK.instant());
+        session.completeLookup(lookupResult);
+        session.completePlanning(new AgentPlanningResult(
+                List.of("No application matched the lookup criteria."),
+                "More information is required to continue."), CLOCK.instant());
         return session;
     }
 }

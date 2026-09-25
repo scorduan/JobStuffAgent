@@ -65,12 +65,16 @@ public class AgentWorkflowService {
         }
 
         ApplicationLookupResult lookupResult = lookup(session, classification);
-        if (!plan(session, lookupResult)) {
+        plan(session, lookupResult);
+        if (session.completedNeedingInput()) {
             agentSessionRepository.save(session);
             return Optional.of(session);
         }
 
-        validate(session, lookupResult);
+        if (!validate(session, lookupResult)) {
+            agentSessionRepository.save(session);
+            return Optional.of(session);
+        }
         execute(session, lookupResult);
         agentSessionRepository.save(session);
 
@@ -92,7 +96,7 @@ public class AgentWorkflowService {
         return lookupResult;
     }
 
-    private boolean plan(AgentSession session, ApplicationLookupResult lookupResult) {
+    private void plan(AgentSession session, ApplicationLookupResult lookupResult) {
         AgentPlanningResult planningResult = lookupResult.errors().isEmpty()
                 ? new AgentPlanningResult(List.of(), lookupResult.summary())
                 : new AgentPlanningResult(
@@ -101,7 +105,6 @@ public class AgentWorkflowService {
                                 .toList(),
                         "More information is required to continue.");
         session.completePlanning(planningResult, clock.instant());
-        return !session.completedNeedingInput();
     }
 
     private boolean validate(AgentSession session, ApplicationLookupResult lookupResult) {

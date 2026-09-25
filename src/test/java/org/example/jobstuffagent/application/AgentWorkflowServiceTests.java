@@ -52,7 +52,7 @@ class AgentWorkflowServiceTests {
     }
 
     @Test
-    void endsTheSessionWithQuestionsWhenClassificationIsAmbiguous() {
+    void endsTheSessionWithQuestionsWhenLookupIsAmbiguous() {
         Fixture fixture = fixture();
         fixture.jobApplicationService.create(new CreateJobApplicationCommand("Example Co.", "Java Engineer", null));
         fixture.jobApplicationService.create(new CreateJobApplicationCommand("Other Co.", "Platform Engineer", null));
@@ -110,6 +110,43 @@ class AgentWorkflowServiceTests {
         assertEquals(ApplicationLookupErrorCode.NO_MATCH,
                 session.lookupResult().orElseThrow().errors().getFirst().code());
         assertTrue(session.planningResult().orElseThrow().needsInput());
+    }
+
+    @Test
+    void failsValidationWhenSelectedDataDisappearsBeforeValidation() {
+        InMemoryJobApplicationRepository repository = new InMemoryJobApplicationRepository();
+        JobApplicationService baseService = new JobApplicationService(repository, UUID::randomUUID, CLOCK);
+        JobApplication application = baseService.create(new CreateJobApplicationCommand(
+                "Example Co.", "Java Engineer", null));
+        JobApplicationService disappearingService = new JobApplicationService(repository, UUID::randomUUID, CLOCK) {
+            private int lookupCount;
+
+            @Override
+            public List<JobApplication> findAll() {
+                lookupCount++;
+                return lookupCount == 2 ? List.of() : super.findAll();
+            }
+        };
+        AgentWorkflowService workflowService = workflowService(
+                disappearingService,
+                new InMemoryConversationRepository(),
+                new InMemoryAgentSessionRepository());
+
+        AgentSession session = workflowService.start(new StartWorkflowCommand(
+                null,
+                "What is the status of my Example Co. application?"))
+                .orElseThrow();
+
+        assertEquals(AgentSessionStatus.FAILED, session.status());
+        assertEquals(List.of(
+                AgentSessionStatus.RECEIVED,
+                AgentSessionStatus.CLASSIFYING,
+                AgentSessionStatus.LOOKING_UP_DATA,
+                AgentSessionStatus.PLANNING,
+                AgentSessionStatus.VALIDATING,
+                AgentSessionStatus.FAILED), session.stateHistory());
+        assertTrue(session.completedAt().isPresent());
+        assertEquals(application.id(), session.lookupResult().orElseThrow().selectedApplicationIds().getFirst());
     }
 
     @Test
@@ -191,6 +228,18 @@ class AgentWorkflowServiceTests {
                 jobApplicationService,
                 CLOCK);
         return new Fixture(jobApplicationService, conversationRepository, workflowService);
+    }
+
+    private AgentWorkflowService workflowService(
+            JobApplicationService jobApplicationService,
+            InMemoryConversationRepository conversationRepository,
+            InMemoryAgentSessionRepository agentSessionRepository) {
+        return new AgentWorkflowService(
+                conversationRepository,
+                agentSessionRepository,
+                new DeterministicAgentClassifier(),
+                jobApplicationService,
+                CLOCK);
     }
 
     private Fixture seededFixture() {

@@ -84,6 +84,7 @@ public final class AgentSession {
 
     public void completeClassification(AgentClassification classification, Instant completedAt) {
         Objects.requireNonNull(classification, "classification must not be null");
+        requireStatus(AgentSessionStatus.CLASSIFYING);
         if (classification.needsInput()) {
             completeNeedingInput(AgentSessionStatus.CLASSIFYING, classification, completedAt);
             return;
@@ -94,16 +95,19 @@ public final class AgentSession {
 
     public void completeLookup(ApplicationLookupResult lookupResult) {
         Objects.requireNonNull(lookupResult, "lookupResult must not be null");
+        requireStatus(AgentSessionStatus.LOOKING_UP_DATA);
         this.lookupResult = lookupResult;
         this.classification = lookupResult.classification();
         transitionFrom(AgentSessionStatus.LOOKING_UP_DATA, AgentSessionStatus.PLANNING);
     }
 
     public void completePlanning(AgentPlanningResult planningResult, Instant completedAt) {
-        this.planningResult = Objects.requireNonNull(planningResult, "planningResult must not be null");
+        Objects.requireNonNull(planningResult, "planningResult must not be null");
+        requireStatus(AgentSessionStatus.PLANNING);
+        this.planningResult = planningResult;
         if (planningResult.needsInput()) {
-            transitionFrom(AgentSessionStatus.PLANNING, AgentSessionStatus.COMPLETED_NEEDS_INPUT);
             this.completedAt = Objects.requireNonNull(completedAt, "completedAt must not be null");
+            transitionFrom(AgentSessionStatus.PLANNING, AgentSessionStatus.COMPLETED_NEEDS_INPUT);
             return;
         }
         transitionFrom(AgentSessionStatus.PLANNING, AgentSessionStatus.VALIDATING);
@@ -114,34 +118,43 @@ public final class AgentSession {
     }
 
     public void completeExecution(ApplicationLookupResult lookupResult, Instant completedAt) {
-        transitionFrom(AgentSessionStatus.EXECUTING, AgentSessionStatus.COMPLETED);
-        this.lookupResult = Objects.requireNonNull(lookupResult, "lookupResult must not be null");
+        Objects.requireNonNull(lookupResult, "lookupResult must not be null");
+        requireStatus(AgentSessionStatus.EXECUTING);
+        this.lookupResult = lookupResult;
         this.classification = lookupResult.classification();
         this.completedAt = Objects.requireNonNull(completedAt, "completedAt must not be null");
+        transitionFrom(AgentSessionStatus.EXECUTING, AgentSessionStatus.COMPLETED);
     }
 
     public void failValidation(ApplicationLookupResult lookupResult, Instant completedAt) {
-        transitionFrom(AgentSessionStatus.VALIDATING, AgentSessionStatus.FAILED);
-        this.lookupResult = Objects.requireNonNull(lookupResult, "lookupResult must not be null");
+        Objects.requireNonNull(lookupResult, "lookupResult must not be null");
+        requireStatus(AgentSessionStatus.VALIDATING);
+        this.lookupResult = lookupResult;
         this.classification = lookupResult.classification();
         this.completedAt = Objects.requireNonNull(completedAt, "completedAt must not be null");
+        transitionFrom(AgentSessionStatus.VALIDATING, AgentSessionStatus.FAILED);
     }
 
     private void completeNeedingInput(
             AgentSessionStatus expectedStatus,
             AgentClassification classification,
             Instant completedAt) {
-        transitionFrom(expectedStatus, AgentSessionStatus.COMPLETED_NEEDS_INPUT);
+        requireStatus(expectedStatus);
         this.classification = classification;
         this.completedAt = Objects.requireNonNull(completedAt, "completedAt must not be null");
+        transitionFrom(expectedStatus, AgentSessionStatus.COMPLETED_NEEDS_INPUT);
     }
 
     private void transitionFrom(AgentSessionStatus expectedStatus, AgentSessionStatus targetStatus) {
+        requireStatus(expectedStatus);
+        status = targetStatus;
+        stateHistory.add(targetStatus);
+    }
+
+    private void requireStatus(AgentSessionStatus expectedStatus) {
         if (status != expectedStatus) {
             throw new IllegalStateException(
                     "Cannot change agent session from " + status + " while expecting " + expectedStatus);
         }
-        status = targetStatus;
-        stateHistory.add(targetStatus);
     }
 }
