@@ -9,22 +9,12 @@ description: |-
 
   Set the `basicUsername` and `basicPassword` collection variables (or override them in an environment) before running requests.
 variables:
-  - key: baseUrl
-    value: 'http://localhost:8080'
-    description: Root URL of the running JobStuffAgent service.
-  - key: basicUsername
-    value: manager
-    description: HTTP Basic username (APPLICATIONS_MANAGER role recommended for write operations).
-  - key: basicPassword
-    value: ''
-    description: HTTP Basic password. Keep blank here; set the real value in an environment or as a secret.
-  - key: applicationId
-    value: ''
-    description: UUID of a job application — populated automatically by the "Create Application" after-response script.
+  baseUrl: http://localhost:8080
+  basicUsername: manager
+  basicPassword: ""
+  applicationId: ""
 auth:
   type: basic
   credentials:
-    - key: username
-      value: '{{basicUsername}}'
-    - key: password
-      value: '{{basicPassword}}'
+    username: "{{basicUsername}}"
+    password: "{{basicPassword}}"

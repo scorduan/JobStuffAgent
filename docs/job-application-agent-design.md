@@ -1,7 +1,7 @@
 # Job Application Agent: Domain and Orchestration Design
 
 **Status:** Living design document  
-**Last updated:** 2026-09-23
+**Last updated:** 2026-09-25
 
 ## Purpose and scope
 
@@ -175,9 +175,9 @@ This is a starting model. The exact states should be simplified if they do not s
 ### Agent workflow
 
 1. Receive a user prompt and associate it with a conversation.
-2. Make a constrained **classification** call. It identifies the likely intent, relevant application criteria, and information required to continue. It may return a clarification response immediately.
-3. Deterministically look up only the relevant application/profile data identified by classification. If the criteria remain ambiguous or insufficient, return precise questions and end the session rather than guessing or broadly loading private data.
-4. Make an optional constrained **planning** call using the goal, selected authoritative facts, allowed actions, and applicable policy/context. It returns a structured plan, bounded action proposals, and/or further questions.
+2. Make a constrained **classification** call. It identifies the likely intent, structured lookup criteria, and information required to continue. It may return a clarification response immediately. Classification does not select records and does not carry a natural-language query for deterministic lookup.
+3. Deterministically apply the structured criteria to authoritative application/profile data identified by classification. The lookup result contains selected record references, structured retrieval errors, and a user-facing summary. Lookup does not formulate questions. For example, no match and ambiguous match are retrieval errors.
+4. Make an optional constrained **planning** call using the goal, selected authoritative facts, allowed actions, applicable policy/context, and any retrieval errors. It returns a structured plan, bounded action proposals, and/or further questions. Planning decides how retrieval errors affect the response.
 5. If planning needs additional human information, return those questions and end the session.
 6. Validate each proposed action against schemas, permissions, lifecycle rules, selected records, and session budgets.
 7. Execute permitted CRUD actions deterministically and record their results.
@@ -197,6 +197,8 @@ The model-facing context is a derived, disposable representation. It should cont
 
 A proposed plan is also not an executed plan. Persist a distinction among:
 
+- **classification:** the interpreted intent and structured criteria for the next deterministic lookup;
+- **lookup result:** the authoritative records selected by those criteria, or structured retrieval errors such as no match or ambiguous match;
 - **model proposal:** the model’s structured requested next actions/questions;
 - **validated plan:** actions the deterministic workflow has accepted as legal and within scope;
 - **tool execution:** an attempt, its normalized result, timestamps, and outcome;
@@ -237,7 +239,7 @@ Use request/response DTOs at the web boundary. Do not expose domain entities as 
 
 1. Implement `ApplicationStatus`, `JobApplication`, and unit tests for legal and illegal lifecycle transitions. Include a table-driven test of every supported transition command from every reachable state, not only representative happy paths. No LLM, persistence, or conversation handling is required.
 2. Add an in-memory application repository and a deterministic `JobApplicationService` for basic CRUD and lookup. The server allocates UUIDs; creation requests never supply authoritative IDs. Wire it to the REST adapter with request/response DTOs so the controller delegates to the service rather than holding business logic.
-3. Add a minimal `Conversation` and `AgentSession` with a deterministic classifier stub that can ask for clarification or select records. Wire the existing workflow endpoint to `AgentWorkflowService` at this point.
+3. Add a minimal `Conversation` and `AgentSession` with a deterministic end-to-end FSM stub. The normal read-only path traverses classification, lookup, planning, validation, and execution; ambiguity exits early with clarification questions. Wire the workflow endpoint to `AgentWorkflowService` at this point. Both local roles may run this read-only workflow; future mutation tools must continue to enforce the manager role through `JobApplicationService`.
 4. Add structured proposal validation and deterministic tool execution.
 5. Integrate an LLM for one semantic decision boundary only, then add persistence and execution-history records as the workflow requires them.
 

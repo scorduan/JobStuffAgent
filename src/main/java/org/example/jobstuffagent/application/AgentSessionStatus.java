@@ -6,6 +6,10 @@ package org.example.jobstuffagent.application;
 public enum AgentSessionStatus {
     RECEIVED,
     CLASSIFYING,
+    LOOKING_UP_DATA,
+    PLANNING,
+    VALIDATING,
+    EXECUTING,
     COMPLETED,
     COMPLETED_NEEDS_INPUT,
     FAILED

@@ -2,8 +2,11 @@ package org.example.jobstuffagent.adapter.web;
 
 import org.example.jobstuffagent.application.AgentClassification;
 import org.example.jobstuffagent.application.AgentIntent;
+import org.example.jobstuffagent.application.AgentPlanningResult;
 import org.example.jobstuffagent.application.AgentSession;
 import org.example.jobstuffagent.application.AgentWorkflowService;
+import org.example.jobstuffagent.application.ApplicationLookupCriteria;
+import org.example.jobstuffagent.application.ApplicationLookupResult;
 import org.example.jobstuffagent.application.StartWorkflowCommand;
 import org.example.jobstuffagent.config.SecurityConfiguration;
 import org.junit.jupiter.api.Test;
@@ -108,12 +111,22 @@ class WorkflowAgentControllerTests {
                 CONVERSATION_ID,
                 "List my applications",
                 CLOCK.instant());
-        session.beginClassification();
-        session.complete(new AgentClassification(
+        AgentClassification classification = new AgentClassification(
                 AgentIntent.LIST_APPLICATIONS,
+                ApplicationLookupCriteria.none(),
+                List.of(),
+                "Found 0 application(s).");
+        ApplicationLookupResult lookupResult = new ApplicationLookupResult(
+                classification,
                 List.of(),
                 List.of(),
-                "Found 0 application(s)."), CLOCK.instant());
+                "Found 0 application(s).");
+        session.beginClassification();
+        session.completeClassification(classification, CLOCK.instant());
+        session.completeLookup(lookupResult);
+        session.completePlanning(new AgentPlanningResult(List.of(), "Found 0 application(s)."), CLOCK.instant());
+        session.completeValidation();
+        session.completeExecution(lookupResult, CLOCK.instant());
         return session;
     }
 }

@@ -33,8 +33,16 @@ class AgentWorkflowServiceTests {
                 .orElseThrow();
 
         assertEquals(AgentSessionStatus.COMPLETED, session.status());
+        assertEquals(List.of(
+                AgentSessionStatus.RECEIVED,
+                AgentSessionStatus.CLASSIFYING,
+                AgentSessionStatus.LOOKING_UP_DATA,
+                AgentSessionStatus.PLANNING,
+                AgentSessionStatus.VALIDATING,
+                AgentSessionStatus.EXECUTING,
+                AgentSessionStatus.COMPLETED), session.stateHistory());
         assertEquals(AgentIntent.LOOK_UP_APPLICATION, session.classification().orElseThrow().intent());
-        assertEquals(List.of(application.id()), session.classification().orElseThrow().selectedApplicationIds());
+        assertEquals(List.of(application.id()), session.lookupResult().orElseThrow().selectedApplicationIds());
         assertTrue(fixture.conversationRepository.findById(session.conversationId()).orElseThrow()
                 .sessionIds().contains(session.id()));
     }
@@ -51,7 +59,13 @@ class AgentWorkflowServiceTests {
                 .orElseThrow();
 
         assertEquals(AgentSessionStatus.COMPLETED_NEEDS_INPUT, session.status());
-        assertTrue(session.classification().orElseThrow().needsInput());
+        assertEquals(List.of(
+                AgentSessionStatus.RECEIVED,
+                AgentSessionStatus.CLASSIFYING,
+                AgentSessionStatus.LOOKING_UP_DATA,
+                AgentSessionStatus.PLANNING,
+                AgentSessionStatus.COMPLETED_NEEDS_INPUT), session.stateHistory());
+        assertTrue(session.planningResult().orElseThrow().needsInput());
     }
 
     @Test
