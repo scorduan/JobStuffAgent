@@ -54,6 +54,10 @@ public final class AgentSession {
         return status;
     }
 
+    public boolean completedNeedingInput() {
+        return status == AgentSessionStatus.COMPLETED_NEEDS_INPUT;
+    }
+
     public List<AgentSessionStatus> stateHistory() {
         return List.copyOf(stateHistory);
     }
@@ -78,15 +82,14 @@ public final class AgentSession {
         transitionFrom(AgentSessionStatus.RECEIVED, AgentSessionStatus.CLASSIFYING);
     }
 
-    public boolean completeClassification(AgentClassification classification, Instant completedAt) {
+    public void completeClassification(AgentClassification classification, Instant completedAt) {
         Objects.requireNonNull(classification, "classification must not be null");
         if (classification.needsInput()) {
             completeNeedingInput(AgentSessionStatus.CLASSIFYING, classification, completedAt);
-            return false;
+            return;
         }
         this.classification = classification;
         transitionFrom(AgentSessionStatus.CLASSIFYING, AgentSessionStatus.LOOKING_UP_DATA);
-        return true;
     }
 
     public void completeLookup(ApplicationLookupResult lookupResult) {
@@ -96,15 +99,14 @@ public final class AgentSession {
         transitionFrom(AgentSessionStatus.LOOKING_UP_DATA, AgentSessionStatus.PLANNING);
     }
 
-    public boolean completePlanning(AgentPlanningResult planningResult, Instant completedAt) {
+    public void completePlanning(AgentPlanningResult planningResult, Instant completedAt) {
         this.planningResult = Objects.requireNonNull(planningResult, "planningResult must not be null");
         if (planningResult.needsInput()) {
             transitionFrom(AgentSessionStatus.PLANNING, AgentSessionStatus.COMPLETED_NEEDS_INPUT);
             this.completedAt = Objects.requireNonNull(completedAt, "completedAt must not be null");
-            return false;
+            return;
         }
         transitionFrom(AgentSessionStatus.PLANNING, AgentSessionStatus.VALIDATING);
-        return true;
     }
 
     public void completeValidation() {

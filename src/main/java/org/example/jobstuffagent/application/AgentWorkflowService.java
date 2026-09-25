@@ -58,13 +58,13 @@ public class AgentWorkflowService {
         conversationRepository.save(conversation);
         agentSessionRepository.save(session);
 
-        Optional<AgentClassification> classification = classify(session, command.prompt());
-        if (classification.isEmpty()) {
+        AgentClassification classification = classify(session, command.prompt());
+        if (session.completedNeedingInput()) {
             agentSessionRepository.save(session);
             return Optional.of(session);
         }
 
-        ApplicationLookupResult lookupResult = lookup(session, classification.orElseThrow());
+        ApplicationLookupResult lookupResult = lookup(session, classification);
         if (!plan(session, lookupResult)) {
             agentSessionRepository.save(session);
             return Optional.of(session);
@@ -77,12 +77,11 @@ public class AgentWorkflowService {
         return Optional.of(session);
     }
 
-    private Optional<AgentClassification> classify(AgentSession session, String prompt) {
+    private AgentClassification classify(AgentSession session, String prompt) {
         session.beginClassification();
         AgentClassification classification = classifier.classify(prompt);
-        return session.completeClassification(classification, clock.instant())
-                ? Optional.of(classification)
-                : Optional.empty();
+        session.completeClassification(classification, clock.instant());
+        return classification;
     }
 
     private ApplicationLookupResult lookup(
@@ -101,7 +100,8 @@ public class AgentWorkflowService {
                                 .map(ApplicationLookupError::message)
                                 .toList(),
                         "More information is required to continue.");
-        return session.completePlanning(planningResult, clock.instant());
+        session.completePlanning(planningResult, clock.instant());
+        return !session.completedNeedingInput();
     }
 
     private boolean validate(AgentSession session, ApplicationLookupResult lookupResult) {
