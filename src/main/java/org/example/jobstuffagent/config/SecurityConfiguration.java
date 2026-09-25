@@ -43,6 +43,10 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.POST, "/applications/**").hasRole(APPLICATIONS_MANAGER)
                         .requestMatchers(HttpMethod.PUT, "/applications/**").hasRole(APPLICATIONS_MANAGER)
                         .requestMatchers(HttpMethod.DELETE, "/applications/**").hasRole(APPLICATIONS_MANAGER)
+                        .requestMatchers(HttpMethod.GET, "/workflows/**")
+                        .hasAnyRole(APPLICATIONS_READ_ONLY, APPLICATIONS_MANAGER)
+                        .requestMatchers(HttpMethod.POST, "/workflows/**")
+                        .hasAnyRole(APPLICATIONS_READ_ONLY, APPLICATIONS_MANAGER)
                         .anyRequest().authenticated())
                 .httpBasic(Customizer.withDefaults())
                 .build();

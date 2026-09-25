@@ -29,6 +29,9 @@ class JobApplicationServiceSecurityTests {
     @Autowired
     private JobApplicationService jobApplicationService;
 
+    @Autowired
+    private AgentWorkflowService agentWorkflowService;
+
     @AfterEach
     void clearAuthentication() {
         SecurityContextHolder.clearContext();
@@ -61,6 +64,18 @@ class JobApplicationServiceSecurityTests {
         assertTrue(jobApplicationService.findById(created.id()).isPresent());
         assertTrue(jobApplicationService.update(created.id(), updateCommand()).isPresent());
         assertTrue(jobApplicationService.delete(created.id()));
+    }
+
+    @Test
+    void readOnlyRoleCanUseTheReadOnlyWorkflowService() {
+        authenticateAs(SecurityConfiguration.APPLICATIONS_READ_ONLY);
+
+        AgentSession session = assertDoesNotThrow(() -> agentWorkflowService.start(
+                        new StartWorkflowCommand(null, "List my applications")))
+                .orElseThrow();
+
+        assertDoesNotThrow(() -> agentWorkflowService.findAllSessions());
+        assertDoesNotThrow(() -> agentWorkflowService.findSessionById(session.id()));
     }
 
     private void authenticateAs(String role) {
