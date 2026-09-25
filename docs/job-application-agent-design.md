@@ -177,7 +177,7 @@ This is a starting model. The exact states should be simplified if they do not s
 1. Receive a user prompt and associate it with a conversation.
 2. Make a constrained **classification** call. It identifies the likely intent, structured lookup criteria, and information required to continue. It may return a clarification response immediately. Classification does not select records and does not carry a natural-language query for deterministic lookup.
 3. Deterministically apply the structured criteria to authoritative application/profile data identified by classification. The lookup result contains selected record references, structured retrieval errors, and a user-facing summary. Lookup does not formulate questions. For example, no match and ambiguous match are retrieval errors.
-4. Make an optional constrained **planning** call using the goal, selected authoritative facts, allowed actions, applicable policy/context, and any retrieval errors. It returns a structured plan, bounded action proposals, and/or further questions. Planning decides how retrieval errors affect the response.
+4. Make an optional constrained **planning** call using the goal, selected authoritative facts, allowed actions, applicable policy/context, and any retrieval errors. It returns a structured plan, bounded action proposals, and/or further questions. Planning decides how retrieval errors affect the response. In phase four, a deterministic planner stub recognizes an explicit status-transition request; it exercises the same proposal contract intended for a future model planner.
 5. If planning needs additional human information, return those questions and end the session.
 6. Validate each proposed action against schemas, permissions, lifecycle rules, selected records, and session budgets.
 7. Execute permitted CRUD actions deterministically and record their results.
@@ -190,6 +190,8 @@ The model may request an action; it never receives a generic write capability. F
 A single user message may request several activities, such as recording an application, updating another application, and drafting a cover letter. Classification and planning must identify dependencies for each activity independently. If any activity needs clarification, the response can use `COMPLETED_NEEDS_INPUT` and identify the incomplete activity precisely.
 
 Whether the executor may perform the fully specified, independent actions from a mixed request while asking for information about the remaining actions is an explicit policy decision. The initial implementation should choose and test one rule before allowing multi-action writes; it must never execute an action whose required identity, facts, or lifecycle preconditions are missing.
+
+Phase four chooses the conservative initial policy: a validated mutation plan contains at most one proposal. Multi-action mutation plans are rejected until an execution boundary can provide an explicit atomicity or partial-execution policy.
 
 ## Context, plans, and execution records
 
@@ -225,6 +227,9 @@ application/
   AgentSession
   AgentSessionStatus
   AgentProposal
+  AgentProposalValidator
+  AgentValidatedPlan
+  ApplicationToolExecutor
   ToolExecution
 
 adapter/
@@ -240,7 +245,7 @@ Use request/response DTOs at the web boundary. Do not expose domain entities as 
 1. Implement `ApplicationStatus`, `JobApplication`, and unit tests for legal and illegal lifecycle transitions. Include a table-driven test of every supported transition command from every reachable state, not only representative happy paths. No LLM, persistence, or conversation handling is required.
 2. Add an in-memory application repository and a deterministic `JobApplicationService` for basic CRUD and lookup. The server allocates UUIDs; creation requests never supply authoritative IDs. Wire it to the REST adapter with request/response DTOs so the controller delegates to the service rather than holding business logic.
 3. Add a minimal `Conversation` and `AgentSession` with a deterministic end-to-end FSM stub. The normal read-only path traverses classification, lookup, planning, validation, and execution; ambiguity exits early with clarification questions. Wire the workflow endpoint to `AgentWorkflowService` at this point. Both local roles may run this read-only workflow; future mutation tools must continue to enforce the manager role through `JobApplicationService`.
-4. Add structured proposal validation and deterministic tool execution.
+4. Add structured proposal validation and deterministic tool execution. The initial mutation tool is `transitionApplicationStatus`; proposals must target selected records, satisfy the domain lifecycle rules, and run through the manager-authorized application service. A deterministic planner stub exercises this path for explicit user status-transition requests. Reject multi-action mutation plans until their execution policy is resolved.
 5. Integrate an LLM for one semantic decision boundary only, then add persistence and execution-history records as the workflow requires them.
 
 ### Framework boundary

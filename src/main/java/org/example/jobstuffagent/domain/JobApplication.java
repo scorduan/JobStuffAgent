@@ -75,6 +75,26 @@ public final class JobApplication {
         return List.copyOf(transitionHistory);
     }
 
+    public boolean canTransitionTo(ApplicationStatus targetStatus) {
+        Objects.requireNonNull(targetStatus, "targetStatus must not be null");
+        return switch (targetStatus) {
+            case APPLIED -> status == ApplicationStatus.RECOMMENDED;
+            case INTERVIEWING -> status == ApplicationStatus.APPLIED
+                    || status == ApplicationStatus.STALE
+                    || status == ApplicationStatus.PRESUMED_DEAD;
+            case OFFERED -> status == ApplicationStatus.INTERVIEWING;
+            case ACCEPTED, DECLINED -> status == ApplicationStatus.OFFERED;
+            case REJECTED -> status == ApplicationStatus.APPLIED
+                    || status == ApplicationStatus.INTERVIEWING
+                    || status == ApplicationStatus.OFFERED
+                    || status == ApplicationStatus.STALE
+                    || status == ApplicationStatus.PRESUMED_DEAD;
+            case STALE -> status == ApplicationStatus.APPLIED;
+            case PRESUMED_DEAD -> status == ApplicationStatus.STALE;
+            case RECOMMENDED -> false;
+        };
+    }
+
     /**
      * Replaces the core opportunity information without changing lifecycle state.
      */
@@ -86,62 +106,49 @@ public final class JobApplication {
     }
 
     public void markApplied(LocalDate effectiveDate, String source, String note) {
-        verifyTransitionTo(ApplicationStatus.APPLIED, ApplicationStatus.RECOMMENDED);
+        verifyTransitionTo(ApplicationStatus.APPLIED);
         recordTransition(ApplicationStatus.APPLIED, effectiveDate, source, note);
     }
 
     public void beginInterviewing(LocalDate effectiveDate, String source, String note) {
-        verifyTransitionTo(
-                ApplicationStatus.INTERVIEWING,
-                ApplicationStatus.APPLIED,
-                ApplicationStatus.STALE,
-                ApplicationStatus.PRESUMED_DEAD);
+        verifyTransitionTo(ApplicationStatus.INTERVIEWING);
         recordTransition(ApplicationStatus.INTERVIEWING, effectiveDate, source, note);
     }
 
     public void recordOffer(LocalDate effectiveDate, String source, String note) {
-        verifyTransitionTo(ApplicationStatus.OFFERED, ApplicationStatus.INTERVIEWING);
+        verifyTransitionTo(ApplicationStatus.OFFERED);
         recordTransition(ApplicationStatus.OFFERED, effectiveDate, source, note);
     }
 
     public void accept(LocalDate effectiveDate, String source, String note) {
-        verifyTransitionTo(ApplicationStatus.ACCEPTED, ApplicationStatus.OFFERED);
+        verifyTransitionTo(ApplicationStatus.ACCEPTED);
         recordTransition(ApplicationStatus.ACCEPTED, effectiveDate, source, note);
     }
 
     public void decline(LocalDate effectiveDate, String source, String note) {
-        verifyTransitionTo(ApplicationStatus.DECLINED, ApplicationStatus.OFFERED);
+        verifyTransitionTo(ApplicationStatus.DECLINED);
         recordTransition(ApplicationStatus.DECLINED, effectiveDate, source, note);
     }
 
     public void reject(LocalDate effectiveDate, String source, String note) {
-        verifyTransitionTo(
-                ApplicationStatus.REJECTED,
-                ApplicationStatus.APPLIED,
-                ApplicationStatus.INTERVIEWING,
-                ApplicationStatus.OFFERED,
-                ApplicationStatus.STALE,
-                ApplicationStatus.PRESUMED_DEAD);
+        verifyTransitionTo(ApplicationStatus.REJECTED);
         recordTransition(ApplicationStatus.REJECTED, effectiveDate, source, note);
     }
 
     public void markStale(LocalDate effectiveDate, String source, String note) {
-        verifyTransitionTo(ApplicationStatus.STALE, ApplicationStatus.APPLIED);
+        verifyTransitionTo(ApplicationStatus.STALE);
         recordTransition(ApplicationStatus.STALE, effectiveDate, source, note);
     }
 
     public void presumeDead(LocalDate effectiveDate, String source, String note) {
-        verifyTransitionTo(ApplicationStatus.PRESUMED_DEAD, ApplicationStatus.STALE);
+        verifyTransitionTo(ApplicationStatus.PRESUMED_DEAD);
         recordTransition(ApplicationStatus.PRESUMED_DEAD, effectiveDate, source, note);
     }
 
     private void verifyTransitionTo(
-            ApplicationStatus targetStatus,
-            ApplicationStatus... allowedSourceStatuses) {
-        for (ApplicationStatus allowedSourceStatus : allowedSourceStatuses) {
-            if (status == allowedSourceStatus) {
-                return;
-            }
+            ApplicationStatus targetStatus) {
+        if (canTransitionTo(targetStatus)) {
+            return;
         }
 
         throw new IllegalStateException(

@@ -5,8 +5,12 @@ import org.example.jobstuffagent.application.AgentIntent;
 import org.example.jobstuffagent.application.AgentPlanningResult;
 import org.example.jobstuffagent.application.AgentSession;
 import org.example.jobstuffagent.application.AgentSessionStatus;
+import org.example.jobstuffagent.application.AgentProposalError;
+import org.example.jobstuffagent.application.AgentProposal;
+import org.example.jobstuffagent.application.AgentProposalValidationResult;
 import org.example.jobstuffagent.application.ApplicationLookupError;
 import org.example.jobstuffagent.application.ApplicationLookupResult;
+import org.example.jobstuffagent.application.ToolExecution;
 
 import java.time.Instant;
 import java.util.List;
@@ -20,6 +24,9 @@ public record AgentSessionResponse(
         AgentIntent intent,
         List<UUID> selectedApplicationIds,
         List<ApplicationLookupError> lookupErrors,
+        List<AgentProposal> proposedActions,
+        List<AgentProposalError> validationErrors,
+        List<ToolExecution> toolExecutions,
         List<String> questions,
         String summary,
         Instant startedAt,
@@ -36,6 +43,9 @@ public record AgentSessionResponse(
                 classification.intent(),
                 lookupResult.map(ApplicationLookupResult::selectedApplicationIds).orElse(List.of()),
                 lookupResult.map(ApplicationLookupResult::errors).orElse(List.of()),
+                session.planningResult().map(AgentPlanningResult::proposals).orElse(List.of()),
+                session.proposalValidationResult().map(AgentProposalValidationResult::errors).orElse(List.of()),
+                session.toolExecutions(),
                 session.planningResult().map(AgentPlanningResult::questions).orElse(classification.questions()),
                 session.planningResult().map(AgentPlanningResult::summary)
                         .or(() -> lookupResult.map(ApplicationLookupResult::summary))

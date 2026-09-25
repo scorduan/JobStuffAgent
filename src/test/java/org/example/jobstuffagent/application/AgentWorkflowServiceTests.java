@@ -4,6 +4,7 @@ import org.example.jobstuffagent.adapter.persistence.InMemoryAgentSessionReposit
 import org.example.jobstuffagent.adapter.persistence.InMemoryConversationRepository;
 import org.example.jobstuffagent.adapter.persistence.InMemoryJobApplicationRepository;
 import org.example.jobstuffagent.domain.JobApplication;
+import org.example.jobstuffagent.domain.ApplicationStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -150,6 +151,51 @@ class AgentWorkflowServiceTests {
     }
 
     @Test
+    void plansValidatesAndExecutesAnExplicitStatusTransitionProposal() {
+        Fixture fixture = fixture();
+        JobApplication application = fixture.jobApplicationService.create(new CreateJobApplicationCommand(
+                "Example Co.", "Java Engineer", null));
+
+        AgentSession session = fixture.workflowService.start(new StartWorkflowCommand(
+                null,
+                "Mark my Example Co. application as APPLIED"))
+                .orElseThrow();
+
+        assertEquals(AgentSessionStatus.COMPLETED, session.status());
+        assertEquals(ApplicationStatus.APPLIED, application.status());
+        assertEquals(1, session.planningResult().orElseThrow().proposals().size());
+        assertTrue(session.proposalValidationResult().orElseThrow().valid());
+        assertEquals(ToolExecutionStatus.SUCCEEDED, session.toolExecutions().getFirst().status());
+        assertEquals(List.of(
+                AgentSessionStatus.RECEIVED,
+                AgentSessionStatus.CLASSIFYING,
+                AgentSessionStatus.LOOKING_UP_DATA,
+                AgentSessionStatus.PLANNING,
+                AgentSessionStatus.VALIDATING,
+                AgentSessionStatus.EXECUTING,
+                AgentSessionStatus.COMPLETED), session.stateHistory());
+    }
+
+    @Test
+    void stopsWhenAPlannedProposalFailsLifecycleValidation() {
+        Fixture fixture = fixture();
+        JobApplication application = fixture.jobApplicationService.create(new CreateJobApplicationCommand(
+                "Example Co.", "Java Engineer", null));
+
+        AgentSession session = fixture.workflowService.start(new StartWorkflowCommand(
+                null,
+                "Mark my Example Co. application as ACCEPTED"))
+                .orElseThrow();
+
+        assertEquals(AgentSessionStatus.FAILED, session.status());
+        assertEquals(ApplicationStatus.RECOMMENDED, application.status());
+        assertEquals(AgentProposalErrorCode.INVALID_LIFECYCLE_TRANSITION,
+                session.proposalValidationResult().orElseThrow().errors().getFirst().code());
+        assertTrue(session.toolExecutions().isEmpty());
+        assertEquals(AgentSessionStatus.FAILED, session.stateHistory().getLast());
+    }
+
+    @Test
     void continuesAnExistingConversationWithANewSession() {
         Fixture fixture = fixture();
 
@@ -225,6 +271,9 @@ class AgentWorkflowServiceTests {
                 conversationRepository,
                 new InMemoryAgentSessionRepository(),
                 new DeterministicAgentClassifier(),
+                new DeterministicAgentPlanner(CLOCK),
+                new AgentProposalValidator(jobApplicationService),
+                new ApplicationToolExecutor(jobApplicationService, CLOCK),
                 jobApplicationService,
                 CLOCK);
         return new Fixture(jobApplicationService, conversationRepository, workflowService);
@@ -238,6 +287,9 @@ class AgentWorkflowServiceTests {
                 conversationRepository,
                 agentSessionRepository,
                 new DeterministicAgentClassifier(),
+                new DeterministicAgentPlanner(CLOCK),
+                new AgentProposalValidator(jobApplicationService),
+                new ApplicationToolExecutor(jobApplicationService, CLOCK),
                 jobApplicationService,
                 CLOCK);
     }

@@ -12,7 +12,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Coordinates the bounded phase-three workflow without model calls or mutation tools.
+ * Coordinates the bounded workflow and sends only validated proposals to deterministic tools.
  */
 @Service
 public class AgentWorkflowService {
@@ -20,6 +20,9 @@ public class AgentWorkflowService {
     private final ConversationRepository conversationRepository;
     private final AgentSessionRepository agentSessionRepository;
     private final DeterministicAgentClassifier classifier;
+    private final DeterministicAgentPlanner planner;
+    private final AgentProposalValidator proposalValidator;
+    private final ApplicationToolExecutor toolExecutor;
     private final JobApplicationService jobApplicationService;
     private final Clock clock;
 
@@ -27,6 +30,9 @@ public class AgentWorkflowService {
             ConversationRepository conversationRepository,
             AgentSessionRepository agentSessionRepository,
             DeterministicAgentClassifier classifier,
+            DeterministicAgentPlanner planner,
+            AgentProposalValidator proposalValidator,
+            ApplicationToolExecutor toolExecutor,
             JobApplicationService jobApplicationService,
             Clock clock) {
         this.conversationRepository = Objects.requireNonNull(
@@ -34,6 +40,10 @@ public class AgentWorkflowService {
         this.agentSessionRepository = Objects.requireNonNull(
                 agentSessionRepository, "agentSessionRepository must not be null");
         this.classifier = Objects.requireNonNull(classifier, "classifier must not be null");
+        this.planner = Objects.requireNonNull(planner, "planner must not be null");
+        this.proposalValidator = Objects.requireNonNull(
+                proposalValidator, "proposalValidator must not be null");
+        this.toolExecutor = Objects.requireNonNull(toolExecutor, "toolExecutor must not be null");
         this.jobApplicationService = Objects.requireNonNull(
                 jobApplicationService, "jobApplicationService must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
@@ -54,31 +64,34 @@ public class AgentWorkflowService {
                 () -> new Conversation(UUID.randomUUID(), clock.instant()));
         AgentSession session = createSession(conversation, command.prompt());
 
-        conversation.addSession(session.id());
-        conversationRepository.save(conversation);
-        agentSessionRepository.save(session);
-
         AgentClassification classification = classify(session, command.prompt());
         if (session.completedNeedingInput()) {
-            agentSessionRepository.save(session);
+            persist(conversation, session);
             return Optional.of(session);
         }
 
         ApplicationLookupResult lookupResult = lookup(session, classification);
-        plan(session, lookupResult);
+        AgentPlanningResult planningResult = plan(session, command.prompt(), lookupResult);
         if (session.completedNeedingInput()) {
-            agentSessionRepository.save(session);
+            persist(conversation, session);
             return Optional.of(session);
         }
 
-        if (!validate(session, lookupResult)) {
-            agentSessionRepository.save(session);
+        AgentProposalValidationResult validationResult = validate(session, planningResult, lookupResult);
+        if (session.status() == AgentSessionStatus.FAILED) {
+            persist(conversation, session);
             return Optional.of(session);
         }
-        execute(session, lookupResult);
-        agentSessionRepository.save(session);
+        execute(session, validationResult);
+        persist(conversation, session);
 
         return Optional.of(session);
+    }
+
+    private void persist(Conversation conversation, AgentSession session) {
+        conversation.addSession(session.id());
+        conversationRepository.save(conversation);
+        agentSessionRepository.save(session);
     }
 
     private AgentClassification classify(AgentSession session, String prompt) {
@@ -96,29 +109,49 @@ public class AgentWorkflowService {
         return lookupResult;
     }
 
-    private void plan(AgentSession session, ApplicationLookupResult lookupResult) {
-        AgentPlanningResult planningResult = lookupResult.errors().isEmpty()
-                ? new AgentPlanningResult(List.of(), lookupResult.summary())
-                : new AgentPlanningResult(
-                        lookupResult.errors().stream()
-                                .map(ApplicationLookupError::message)
-                                .toList(),
-                        "More information is required to continue.");
+    private AgentPlanningResult plan(
+            AgentSession session,
+            String prompt,
+            ApplicationLookupResult lookupResult) {
+        AgentPlanningResult planningResult = planner.plan(prompt, lookupResult);
         session.completePlanning(planningResult, clock.instant());
+        return planningResult;
     }
 
-    private boolean validate(AgentSession session, ApplicationLookupResult lookupResult) {
-        if (!selectionIsStillAvailable(lookupResult)) {
-            session.failValidation(selectionChangedResult(lookupResult), clock.instant());
-            return false;
+    private AgentProposalValidationResult validate(
+            AgentSession session,
+            AgentPlanningResult planningResult,
+            ApplicationLookupResult lookupResult) {
+        if (!planningResult.proposals().isEmpty()) {
+            AgentProposalValidationResult validationResult = proposalValidator.validate(
+                    planningResult.proposals(), lookupResult.selectedApplicationIds());
+            session.completeValidation(validationResult, clock.instant());
+            return validationResult;
         }
 
-        session.completeValidation();
-        return true;
+        if (!selectionIsStillAvailable(lookupResult)) {
+            AgentProposalValidationResult validationResult = new AgentProposalValidationResult(
+                    null,
+                    List.of(new AgentProposalError(
+                            AgentProposalErrorCode.APPLICATION_NOT_FOUND,
+                            "Selected application data changed before validation.")));
+            session.completeValidation(validationResult, clock.instant());
+            return validationResult;
+        }
+
+        AgentProposalValidationResult validationResult = new AgentProposalValidationResult(
+                new AgentValidatedPlan(List.of(), "No mutation was proposed."),
+                List.of());
+        session.completeValidation(validationResult, clock.instant());
+        return validationResult;
     }
 
-    private void execute(AgentSession session, ApplicationLookupResult lookupResult) {
-        session.completeExecution(lookupResult, clock.instant());
+    private void execute(AgentSession session, AgentProposalValidationResult validationResult) {
+        List<ToolExecution> executions = validationResult.validatedPlan() == null
+                || validationResult.validatedPlan().proposals().isEmpty()
+                ? List.of()
+                : toolExecutor.execute(validationResult.validatedPlan());
+        session.completeExecution(executions, clock.instant());
     }
 
     private AgentSession createSession(Conversation conversation, String prompt) {
@@ -131,14 +164,6 @@ public class AgentWorkflowService {
                 .filter(application -> selectedIds.contains(application.id()))
                 .count();
         return availableCount == selectedIds.size();
-    }
-
-    private ApplicationLookupResult selectionChangedResult(ApplicationLookupResult lookupResult) {
-        return new ApplicationLookupResult(
-                lookupResult.classification(),
-                lookupResult.selectedApplicationIds(),
-                List.of(),
-                "Selected application data changed before validation.");
     }
 
     @PreAuthorize("hasAnyRole('APPLICATIONS_READ_ONLY', 'APPLICATIONS_MANAGER')")

@@ -82,6 +82,24 @@ class JobApplicationServiceTests {
         assertEquals(secondId, firstService.findAll().getFirst().id());
     }
 
+    @Test
+    void transitionsAnApplicationThroughTheManagerToolBoundary() {
+        UUID id = UUID.randomUUID();
+        JobApplicationService service = serviceWithId(id);
+        JobApplication application = service.create(new CreateJobApplicationCommand(
+                "Example Co.", "Engineer", null));
+
+        JobApplication transitioned = service.transitionStatus(
+                application.id(),
+                ApplicationStatus.APPLIED,
+                java.time.LocalDate.of(2026, 9, 25),
+                "agent",
+                "User confirmed the application was submitted.");
+
+        assertEquals(ApplicationStatus.APPLIED, transitioned.status());
+        assertEquals("agent", transitioned.transitionHistory().getFirst().source());
+    }
+
     private JobApplicationService serviceWithId(UUID id) {
         return new JobApplicationService(new InMemoryJobApplicationRepository(), () -> id, CLOCK);
     }
