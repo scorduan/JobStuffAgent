@@ -1,0 +1,20 @@
+# Copy to terraform.tfvars. terraform.tfvars is gitignored.
+# Oregon avoids making us-east-1 the initial dependency while remaining a
+# directly supported region for the selected classifier model.
+aws_account_id = "698645100382"
+aws_region     = "us-west-2"
+environment    = "dev"
+
+# Amazon Nova Lite is the initial non-streaming classifier model. Use its exact
+# in-region foundation-model ARN; no inference-profile permissions are needed.
+bedrock_invocation_resource_arns = [
+  "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-lite-v1:0"
+]
+
+# Keep false for the initial non-streaming classifier. Enable only when the
+# application deliberately introduces streamed model output.
+allow_streaming = false
+
+# If changing to an inference profile later, replace the list above with the
+# profile ARN plus every foundation-model ARN required by that profile. See the
+# README for the policy rationale and AWS documentation links.

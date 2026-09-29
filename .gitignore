@@ -39,3 +39,10 @@ out/
 ### VS Code ###
 .vscode/
 /postman/environments/LocalManager.environment.yaml
+
+### Terraform ###
+infra/terraform/**/.terraform/
+infra/terraform/**/*.tfstate
+infra/terraform/**/*.tfstate.*
+infra/terraform/**/*.tfvars
+!infra/terraform/**/*.tfvars.example
