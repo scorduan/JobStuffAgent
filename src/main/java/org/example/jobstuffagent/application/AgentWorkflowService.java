@@ -1,6 +1,7 @@
 package org.example.jobstuffagent.application;
 
 import org.example.jobstuffagent.domain.JobApplication;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 
@@ -147,11 +148,35 @@ public class AgentWorkflowService {
     }
 
     private void execute(AgentSession session, AgentProposalValidationResult validationResult) {
-        List<ToolExecution> executions = validationResult.validatedPlan() == null
-                || validationResult.validatedPlan().proposals().isEmpty()
-                ? List.of()
-                : toolExecutor.execute(validationResult.validatedPlan());
+        if (validationResult.validatedPlan() == null
+                || validationResult.validatedPlan().proposals().isEmpty()) {
+            session.completeExecution(List.of(), clock.instant());
+            return;
+        }
+
+        List<ToolExecution> executions;
+        try {
+            executions = toolExecutor.execute(validationResult.validatedPlan());
+        } catch (AccessDeniedException exception) {
+            // Authorization failures remain security failures rather than becoming
+            // ordinary workflow results.
+            throw exception;
+        } catch (RuntimeException exception) {
+            AgentProposal proposal = validationResult.validatedPlan().proposals().getFirst();
+            executions = List.of(new ToolExecution(
+                    proposal,
+                    ToolExecutionStatus.FAILED,
+                    clock.instant(),
+                    executionFailureSummary(exception)));
+        }
         session.completeExecution(executions, clock.instant());
+    }
+
+    private String executionFailureSummary(RuntimeException exception) {
+        String message = exception.getMessage();
+        return message == null || message.isBlank()
+                ? "The application tool failed during execution."
+                : "The application tool failed during execution: " + message;
     }
 
     private AgentSession createSession(Conversation conversation, String prompt) {

@@ -196,6 +196,43 @@ class AgentWorkflowServiceTests {
     }
 
     @Test
+    void recordsUnexpectedToolFailureAndPersistsTheFailedSession() {
+        InMemoryJobApplicationRepository applicationRepository = new InMemoryJobApplicationRepository();
+        JobApplicationService jobApplicationService = new JobApplicationService(
+                applicationRepository, UUID::randomUUID, CLOCK);
+        InMemoryConversationRepository conversationRepository = new InMemoryConversationRepository();
+        InMemoryAgentSessionRepository sessionRepository = new InMemoryAgentSessionRepository();
+        ApplicationToolExecutor failingExecutor = new ApplicationToolExecutor(jobApplicationService, CLOCK) {
+            @Override
+            public List<ToolExecution> execute(AgentValidatedPlan plan) {
+                throw new IllegalStateException("tool backend unavailable");
+            }
+        };
+        AgentWorkflowService workflowService = new AgentWorkflowService(
+                conversationRepository,
+                sessionRepository,
+                new DeterministicAgentClassifier(),
+                new DeterministicAgentPlanner(CLOCK),
+                new AgentProposalValidator(jobApplicationService),
+                failingExecutor,
+                jobApplicationService,
+                CLOCK);
+        jobApplicationService.create(new CreateJobApplicationCommand(
+                "Example Co.", "Java Engineer", null));
+
+        AgentSession session = workflowService.start(new StartWorkflowCommand(
+                null,
+                "Mark my Example Co. application as APPLIED")).orElseThrow();
+
+        assertEquals(AgentSessionStatus.FAILED, session.status());
+        assertEquals(ToolExecutionStatus.FAILED, session.toolExecutions().getFirst().status());
+        assertTrue(session.toolExecutions().getFirst().summary().contains("tool backend unavailable"));
+        assertEquals(session.id(), sessionRepository.findById(session.id()).orElseThrow().id());
+        assertTrue(conversationRepository.findById(session.conversationId()).orElseThrow()
+                .sessionIds().contains(session.id()));
+    }
+
+    @Test
     void continuesAnExistingConversationWithANewSession() {
         Fixture fixture = fixture();
 

@@ -1,0 +1,10 @@
+package org.example.jobstuffagent.application;
+
+public enum AgentProposalErrorCode {
+    EMPTY_PROPOSAL_SET,
+    MULTIPLE_PROPOSALS_NOT_SUPPORTED,
+    UNSUPPORTED_ACTION,
+    APPLICATION_NOT_FOUND,
+    APPLICATION_NOT_SELECTED,
+    INVALID_LIFECYCLE_TRANSITION
+}
