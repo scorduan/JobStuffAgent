@@ -6,8 +6,10 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -17,6 +19,29 @@ import java.util.UUID;
  * appended to {@link #transitionHistory()} for later audit and date-based reporting.</p>
  */
 public final class JobApplication {
+
+    /**
+     * Authoritative lifecycle policy, indexed by target status. RECOMMENDED is an
+     * initial state rather than a transition target, so it has no allowed sources.
+     */
+    private static final Map<ApplicationStatus, Set<ApplicationStatus>> ALLOWED_SOURCES_BY_TARGET = Map.of(
+            ApplicationStatus.RECOMMENDED, Set.of(),
+            ApplicationStatus.APPLIED, Set.of(ApplicationStatus.RECOMMENDED),
+            ApplicationStatus.INTERVIEWING, Set.of(
+                    ApplicationStatus.APPLIED,
+                    ApplicationStatus.STALE,
+                    ApplicationStatus.PRESUMED_DEAD),
+            ApplicationStatus.OFFERED, Set.of(ApplicationStatus.INTERVIEWING),
+            ApplicationStatus.ACCEPTED, Set.of(ApplicationStatus.OFFERED),
+            ApplicationStatus.DECLINED, Set.of(ApplicationStatus.OFFERED),
+            ApplicationStatus.REJECTED, Set.of(
+                    ApplicationStatus.APPLIED,
+                    ApplicationStatus.INTERVIEWING,
+                    ApplicationStatus.OFFERED,
+                    ApplicationStatus.STALE,
+                    ApplicationStatus.PRESUMED_DEAD),
+            ApplicationStatus.STALE, Set.of(ApplicationStatus.APPLIED),
+            ApplicationStatus.PRESUMED_DEAD, Set.of(ApplicationStatus.STALE));
 
     private final UUID id;
     private String company;
@@ -77,22 +102,7 @@ public final class JobApplication {
 
     public boolean canTransitionTo(ApplicationStatus targetStatus) {
         Objects.requireNonNull(targetStatus, "targetStatus must not be null");
-        return switch (targetStatus) {
-            case APPLIED -> status == ApplicationStatus.RECOMMENDED;
-            case INTERVIEWING -> status == ApplicationStatus.APPLIED
-                    || status == ApplicationStatus.STALE
-                    || status == ApplicationStatus.PRESUMED_DEAD;
-            case OFFERED -> status == ApplicationStatus.INTERVIEWING;
-            case ACCEPTED, DECLINED -> status == ApplicationStatus.OFFERED;
-            case REJECTED -> status == ApplicationStatus.APPLIED
-                    || status == ApplicationStatus.INTERVIEWING
-                    || status == ApplicationStatus.OFFERED
-                    || status == ApplicationStatus.STALE
-                    || status == ApplicationStatus.PRESUMED_DEAD;
-            case STALE -> status == ApplicationStatus.APPLIED;
-            case PRESUMED_DEAD -> status == ApplicationStatus.STALE;
-            case RECOMMENDED -> false;
-        };
+        return ALLOWED_SOURCES_BY_TARGET.get(targetStatus).contains(status);
     }
 
     /**
