@@ -4,6 +4,7 @@ import org.example.jobstuffagent.adapter.persistence.InMemoryAgentSessionReposit
 import org.example.jobstuffagent.adapter.persistence.InMemoryConversationRepository;
 import org.example.jobstuffagent.adapter.persistence.InMemoryJobApplicationRepository;
 import org.example.jobstuffagent.domain.JobApplication;
+import org.example.jobstuffagent.domain.ApplicationStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -150,6 +151,120 @@ class AgentWorkflowServiceTests {
     }
 
     @Test
+    void plansValidatesAndExecutesAnExplicitStatusTransitionProposal() {
+        Fixture fixture = fixture();
+        JobApplication application = fixture.jobApplicationService.create(new CreateJobApplicationCommand(
+                "Example Co.", "Java Engineer", null));
+
+        AgentSession session = fixture.workflowService.start(new StartWorkflowCommand(
+                null,
+                "Mark my Example Co. application as APPLIED"))
+                .orElseThrow();
+
+        assertEquals(AgentSessionStatus.COMPLETED, session.status());
+        assertEquals(ApplicationStatus.APPLIED, application.status());
+        assertEquals(1, session.planningResult().orElseThrow().proposals().size());
+        assertTrue(session.proposalValidationResult().orElseThrow().valid());
+        assertEquals(ToolExecutionStatus.SUCCEEDED, session.toolExecutions().getFirst().status());
+        assertEquals(List.of(
+                AgentSessionStatus.RECEIVED,
+                AgentSessionStatus.CLASSIFYING,
+                AgentSessionStatus.LOOKING_UP_DATA,
+                AgentSessionStatus.PLANNING,
+                AgentSessionStatus.VALIDATING,
+                AgentSessionStatus.EXECUTING,
+                AgentSessionStatus.COMPLETED), session.stateHistory());
+    }
+
+    @Test
+    void stopsWhenAPlannedProposalFailsLifecycleValidation() {
+        Fixture fixture = fixture();
+        JobApplication application = fixture.jobApplicationService.create(new CreateJobApplicationCommand(
+                "Example Co.", "Java Engineer", null));
+
+        AgentSession session = fixture.workflowService.start(new StartWorkflowCommand(
+                null,
+                "Mark my Example Co. application as ACCEPTED"))
+                .orElseThrow();
+
+        assertEquals(AgentSessionStatus.FAILED, session.status());
+        assertEquals(ApplicationStatus.RECOMMENDED, application.status());
+        assertEquals(AgentProposalErrorCode.INVALID_LIFECYCLE_TRANSITION,
+                session.proposalValidationResult().orElseThrow().errors().getFirst().code());
+        assertTrue(session.toolExecutions().isEmpty());
+        assertEquals(AgentSessionStatus.FAILED, session.stateHistory().getLast());
+    }
+
+    @Test
+    void recordsAnUnknownToolOutcomeAndPersistsTheFailedSession() {
+        InMemoryJobApplicationRepository applicationRepository = new InMemoryJobApplicationRepository();
+        JobApplicationService jobApplicationService = new JobApplicationService(
+                applicationRepository, UUID::randomUUID, CLOCK);
+        InMemoryConversationRepository conversationRepository = new InMemoryConversationRepository();
+        InMemoryAgentSessionRepository sessionRepository = new InMemoryAgentSessionRepository();
+        ApplicationToolExecutor failingExecutor = new ApplicationToolExecutor(jobApplicationService, CLOCK) {
+            @Override
+            public List<ToolExecution> execute(AgentValidatedPlan plan) {
+                throw new IllegalStateException("tool backend unavailable");
+            }
+        };
+        AgentWorkflowService workflowService = new AgentWorkflowService(
+                conversationRepository,
+                sessionRepository,
+                new DeterministicAgentClassifier(),
+                new DeterministicAgentPlanner(CLOCK),
+                new AgentProposalValidator(jobApplicationService),
+                failingExecutor,
+                jobApplicationService,
+                CLOCK);
+        jobApplicationService.create(new CreateJobApplicationCommand(
+                "Example Co.", "Java Engineer", null));
+
+        AgentSession session = workflowService.start(new StartWorkflowCommand(
+                null,
+                "Mark my Example Co. application as APPLIED")).orElseThrow();
+
+        assertEquals(AgentSessionStatus.FAILED, session.status());
+        assertEquals(ToolExecutionStatus.UNKNOWN, session.toolExecutions().getFirst().status());
+        assertEquals("The application tool did not report a reliable outcome.",
+                session.toolExecutions().getFirst().summary());
+        assertEquals(session.id(), sessionRepository.findById(session.id()).orElseThrow().id());
+        assertTrue(conversationRepository.findById(session.conversationId()).orElseThrow()
+                .sessionIds().contains(session.id()));
+    }
+
+    @Test
+    void recordsAnUnknownOutcomeWhenTheToolOmitsTheExecutionResult() {
+        InMemoryJobApplicationRepository applicationRepository = new InMemoryJobApplicationRepository();
+        JobApplicationService jobApplicationService = new JobApplicationService(
+                applicationRepository, UUID::randomUUID, CLOCK);
+        ApplicationToolExecutor incompleteExecutor = new ApplicationToolExecutor(jobApplicationService, CLOCK) {
+            @Override
+            public List<ToolExecution> execute(AgentValidatedPlan plan) {
+                return List.of();
+            }
+        };
+        AgentWorkflowService workflowService = new AgentWorkflowService(
+                new InMemoryConversationRepository(),
+                new InMemoryAgentSessionRepository(),
+                new DeterministicAgentClassifier(),
+                new DeterministicAgentPlanner(CLOCK),
+                new AgentProposalValidator(jobApplicationService),
+                incompleteExecutor,
+                jobApplicationService,
+                CLOCK);
+        jobApplicationService.create(new CreateJobApplicationCommand(
+                "Example Co.", "Java Engineer", null));
+
+        AgentSession session = workflowService.start(new StartWorkflowCommand(
+                null,
+                "Mark my Example Co. application as APPLIED")).orElseThrow();
+
+        assertEquals(AgentSessionStatus.FAILED, session.status());
+        assertEquals(ToolExecutionStatus.UNKNOWN, session.toolExecutions().getFirst().status());
+    }
+
+    @Test
     void continuesAnExistingConversationWithANewSession() {
         Fixture fixture = fixture();
 
@@ -225,6 +340,9 @@ class AgentWorkflowServiceTests {
                 conversationRepository,
                 new InMemoryAgentSessionRepository(),
                 new DeterministicAgentClassifier(),
+                new DeterministicAgentPlanner(CLOCK),
+                new AgentProposalValidator(jobApplicationService),
+                new ApplicationToolExecutor(jobApplicationService, CLOCK),
                 jobApplicationService,
                 CLOCK);
         return new Fixture(jobApplicationService, conversationRepository, workflowService);
@@ -238,6 +356,9 @@ class AgentWorkflowServiceTests {
                 conversationRepository,
                 agentSessionRepository,
                 new DeterministicAgentClassifier(),
+                new DeterministicAgentPlanner(CLOCK),
+                new AgentProposalValidator(jobApplicationService),
+                new ApplicationToolExecutor(jobApplicationService, CLOCK),
                 jobApplicationService,
                 CLOCK);
     }

@@ -3,6 +3,8 @@ package org.example.jobstuffagent.adapter.web;
 import org.example.jobstuffagent.application.AgentClassification;
 import org.example.jobstuffagent.application.AgentIntent;
 import org.example.jobstuffagent.application.AgentPlanningResult;
+import org.example.jobstuffagent.application.AgentProposalValidationResult;
+import org.example.jobstuffagent.application.AgentValidatedPlan;
 import org.example.jobstuffagent.application.AgentSession;
 import org.example.jobstuffagent.application.AgentWorkflowService;
 import org.example.jobstuffagent.application.ApplicationLookupCriteria;
@@ -162,9 +164,10 @@ class WorkflowAgentControllerTests {
         session.beginClassification();
         session.completeClassification(classification, CLOCK.instant());
         session.completeLookup(lookupResult);
-        session.completePlanning(new AgentPlanningResult(List.of(), "Found 0 application(s)."), CLOCK.instant());
-        session.completeValidation();
-        session.completeExecution(lookupResult, CLOCK.instant());
+        session.completePlanning(new AgentPlanningResult(List.of(), List.of(), "Found 0 application(s)."), CLOCK.instant());
+        session.completeValidation(new AgentProposalValidationResult(
+                new AgentValidatedPlan(List.of(), "No mutation was proposed."), List.of()), CLOCK.instant());
+        session.completeExecution(List.of(), CLOCK.instant());
         return session;
     }
 
@@ -205,6 +208,7 @@ class WorkflowAgentControllerTests {
         session.completeClassification(classification, CLOCK.instant());
         session.completeLookup(lookupResult);
         session.completePlanning(new AgentPlanningResult(
+                List.of(),
                 List.of("No application matched the lookup criteria."),
                 "More information is required to continue."), CLOCK.instant());
         return session;

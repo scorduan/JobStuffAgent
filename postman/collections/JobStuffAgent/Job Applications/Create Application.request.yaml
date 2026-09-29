@@ -19,7 +19,7 @@ body:
   type: json
   content: |-
     {
-      "company": "Acme Corp",
+      "company": "Workflow Co {{$guid}}",
       "role": "Senior Software Engineer",
       "sourceUrl": "https://jobs.acme.com/posting/12345"
     }
@@ -41,9 +41,9 @@ scripts:
           pm.expect(json.id).to.be.a("string");
       });
 
-      pm.test("Response body contains company and role", function () {
+      pm.test("Response body contains the generated company and role", function () {
           const json = pm.response.json();
-          pm.expect(json.company).to.eql("Acme Corp");
+          pm.expect(json.company).to.match(/^Workflow Co [0-9a-f-]{36}$/);
           pm.expect(json.role).to.eql("Senior Software Engineer");
       });
 
@@ -56,4 +56,5 @@ scripts:
       if (pm.response.code === 201) {
           const json = pm.response.json();
           pm.collectionVariables.set("applicationId", json.id);
+          pm.collectionVariables.set("workflowCompany", json.company);
       }

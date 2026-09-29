@@ -3,23 +3,17 @@ package org.example.jobstuffagent.application;
 import java.util.List;
 
 /**
- * The planning-stage interpretation of lookup results and any next questions.
+ * Proposals accepted by deterministic validation and safe to send to a tool executor.
  */
-public record AgentPlanningResult(
+public record AgentValidatedPlan(
         List<AgentProposal> proposals,
-        List<String> questions,
         String summary) {
 
-    public AgentPlanningResult {
+    public AgentValidatedPlan {
         proposals = List.copyOf(proposals);
-        questions = List.copyOf(questions);
         if (summary == null || summary.isBlank()) {
             throw new IllegalArgumentException("summary must not be blank");
         }
         summary = summary.trim();
-    }
-
-    public boolean needsInput() {
-        return !questions.isEmpty();
     }
 }

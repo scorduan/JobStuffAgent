@@ -6,8 +6,10 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -17,6 +19,29 @@ import java.util.UUID;
  * appended to {@link #transitionHistory()} for later audit and date-based reporting.</p>
  */
 public final class JobApplication {
+
+    /**
+     * Authoritative lifecycle policy, indexed by target status. RECOMMENDED is an
+     * initial state rather than a transition target, so it has no allowed sources.
+     */
+    private static final Map<ApplicationStatus, Set<ApplicationStatus>> ALLOWED_SOURCES_BY_TARGET = Map.of(
+            ApplicationStatus.RECOMMENDED, Set.of(),
+            ApplicationStatus.APPLIED, Set.of(ApplicationStatus.RECOMMENDED),
+            ApplicationStatus.INTERVIEWING, Set.of(
+                    ApplicationStatus.APPLIED,
+                    ApplicationStatus.STALE,
+                    ApplicationStatus.PRESUMED_DEAD),
+            ApplicationStatus.OFFERED, Set.of(ApplicationStatus.INTERVIEWING),
+            ApplicationStatus.ACCEPTED, Set.of(ApplicationStatus.OFFERED),
+            ApplicationStatus.DECLINED, Set.of(ApplicationStatus.OFFERED),
+            ApplicationStatus.REJECTED, Set.of(
+                    ApplicationStatus.APPLIED,
+                    ApplicationStatus.INTERVIEWING,
+                    ApplicationStatus.OFFERED,
+                    ApplicationStatus.STALE,
+                    ApplicationStatus.PRESUMED_DEAD),
+            ApplicationStatus.STALE, Set.of(ApplicationStatus.APPLIED),
+            ApplicationStatus.PRESUMED_DEAD, Set.of(ApplicationStatus.STALE));
 
     private final UUID id;
     private String company;
@@ -75,6 +100,11 @@ public final class JobApplication {
         return List.copyOf(transitionHistory);
     }
 
+    public boolean canTransitionTo(ApplicationStatus targetStatus) {
+        Objects.requireNonNull(targetStatus, "targetStatus must not be null");
+        return ALLOWED_SOURCES_BY_TARGET.get(targetStatus).contains(status);
+    }
+
     /**
      * Replaces the core opportunity information without changing lifecycle state.
      */
@@ -86,62 +116,49 @@ public final class JobApplication {
     }
 
     public void markApplied(LocalDate effectiveDate, String source, String note) {
-        verifyTransitionTo(ApplicationStatus.APPLIED, ApplicationStatus.RECOMMENDED);
+        verifyTransitionTo(ApplicationStatus.APPLIED);
         recordTransition(ApplicationStatus.APPLIED, effectiveDate, source, note);
     }
 
     public void beginInterviewing(LocalDate effectiveDate, String source, String note) {
-        verifyTransitionTo(
-                ApplicationStatus.INTERVIEWING,
-                ApplicationStatus.APPLIED,
-                ApplicationStatus.STALE,
-                ApplicationStatus.PRESUMED_DEAD);
+        verifyTransitionTo(ApplicationStatus.INTERVIEWING);
         recordTransition(ApplicationStatus.INTERVIEWING, effectiveDate, source, note);
     }
 
     public void recordOffer(LocalDate effectiveDate, String source, String note) {
-        verifyTransitionTo(ApplicationStatus.OFFERED, ApplicationStatus.INTERVIEWING);
+        verifyTransitionTo(ApplicationStatus.OFFERED);
         recordTransition(ApplicationStatus.OFFERED, effectiveDate, source, note);
     }
 
     public void accept(LocalDate effectiveDate, String source, String note) {
-        verifyTransitionTo(ApplicationStatus.ACCEPTED, ApplicationStatus.OFFERED);
+        verifyTransitionTo(ApplicationStatus.ACCEPTED);
         recordTransition(ApplicationStatus.ACCEPTED, effectiveDate, source, note);
     }
 
     public void decline(LocalDate effectiveDate, String source, String note) {
-        verifyTransitionTo(ApplicationStatus.DECLINED, ApplicationStatus.OFFERED);
+        verifyTransitionTo(ApplicationStatus.DECLINED);
         recordTransition(ApplicationStatus.DECLINED, effectiveDate, source, note);
     }
 
     public void reject(LocalDate effectiveDate, String source, String note) {
-        verifyTransitionTo(
-                ApplicationStatus.REJECTED,
-                ApplicationStatus.APPLIED,
-                ApplicationStatus.INTERVIEWING,
-                ApplicationStatus.OFFERED,
-                ApplicationStatus.STALE,
-                ApplicationStatus.PRESUMED_DEAD);
+        verifyTransitionTo(ApplicationStatus.REJECTED);
         recordTransition(ApplicationStatus.REJECTED, effectiveDate, source, note);
     }
 
     public void markStale(LocalDate effectiveDate, String source, String note) {
-        verifyTransitionTo(ApplicationStatus.STALE, ApplicationStatus.APPLIED);
+        verifyTransitionTo(ApplicationStatus.STALE);
         recordTransition(ApplicationStatus.STALE, effectiveDate, source, note);
     }
 
     public void presumeDead(LocalDate effectiveDate, String source, String note) {
-        verifyTransitionTo(ApplicationStatus.PRESUMED_DEAD, ApplicationStatus.STALE);
+        verifyTransitionTo(ApplicationStatus.PRESUMED_DEAD);
         recordTransition(ApplicationStatus.PRESUMED_DEAD, effectiveDate, source, note);
     }
 
     private void verifyTransitionTo(
-            ApplicationStatus targetStatus,
-            ApplicationStatus... allowedSourceStatuses) {
-        for (ApplicationStatus allowedSourceStatus : allowedSourceStatuses) {
-            if (status == allowedSourceStatus) {
-                return;
-            }
+            ApplicationStatus targetStatus) {
+        if (canTransitionTo(targetStatus)) {
+            return;
         }
 
         throw new IllegalStateException(

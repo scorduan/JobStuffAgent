@@ -1,6 +1,7 @@
 package org.example.jobstuffagent.application;
 
 import org.example.jobstuffagent.domain.JobApplication;
+import org.example.jobstuffagent.domain.ApplicationStatus;
 import org.example.jobstuffagent.config.SecurityConfiguration;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -12,8 +13,11 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.UUID;
+import java.time.LocalDate;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -31,6 +35,9 @@ class JobApplicationServiceSecurityTests {
 
     @Autowired
     private AgentWorkflowService agentWorkflowService;
+
+    @Autowired
+    private ApplicationToolExecutor applicationToolExecutor;
 
     @AfterEach
     void clearAuthentication() {
@@ -53,6 +60,7 @@ class JobApplicationServiceSecurityTests {
         assertThrows(AccessDeniedException.class,
                 () -> jobApplicationService.update(UUID.randomUUID(), updateCommand()));
         assertThrows(AccessDeniedException.class, () -> jobApplicationService.delete(UUID.randomUUID()));
+        assertThrows(AccessDeniedException.class, () -> applicationToolExecutor.execute(validatedPlan()));
     }
 
     @Test
@@ -67,6 +75,25 @@ class JobApplicationServiceSecurityTests {
     }
 
     @Test
+    void managerRoleCanExecuteAValidatedTransitionTool() {
+        authenticateAs(SecurityConfiguration.APPLICATIONS_MANAGER);
+
+        JobApplication created = jobApplicationService.create(command());
+        AgentProposal proposal = new AgentProposal(
+                AgentAction.TRANSITION_APPLICATION_STATUS,
+                created.id(),
+                ApplicationStatus.APPLIED,
+                LocalDate.of(2026, 9, 25),
+                "agent",
+                "Submitted today.");
+
+        assertDoesNotThrow(() -> applicationToolExecutor.execute(
+                new AgentValidatedPlan(List.of(proposal), "Validated one proposal.")));
+        assertEquals(ApplicationStatus.APPLIED,
+                jobApplicationService.findById(created.id()).orElseThrow().status());
+    }
+
+    @Test
     void readOnlyRoleCanUseTheReadOnlyWorkflowService() {
         authenticateAs(SecurityConfiguration.APPLICATIONS_READ_ONLY);
 
@@ -76,6 +103,19 @@ class JobApplicationServiceSecurityTests {
 
         assertDoesNotThrow(() -> agentWorkflowService.findAllSessions());
         assertDoesNotThrow(() -> agentWorkflowService.findSessionById(session.id()));
+    }
+
+    @Test
+    void readOnlyRoleCannotExecuteAWorkflowMutationProposal() {
+        authenticateAs(SecurityConfiguration.APPLICATIONS_MANAGER);
+        JobApplication application = jobApplicationService.create(new CreateJobApplicationCommand(
+                "Mutation Test Co.", "Dedicated Engineer", null));
+        authenticateAs(SecurityConfiguration.APPLICATIONS_READ_ONLY);
+
+        assertThrows(RuntimeException.class, () -> agentWorkflowService.start(
+                new StartWorkflowCommand(null, "Mark my Mutation Test Co. application as APPLIED")));
+        assertEquals(ApplicationStatus.RECOMMENDED,
+                jobApplicationService.findById(application.id()).orElseThrow().status());
     }
 
     private void authenticateAs(String role) {
@@ -92,5 +132,15 @@ class JobApplicationServiceSecurityTests {
 
     private UpdateJobApplicationCommand updateCommand() {
         return new UpdateJobApplicationCommand("Updated Co.", "Senior Java Engineer", null);
+    }
+
+    private AgentValidatedPlan validatedPlan() {
+        return new AgentValidatedPlan(List.of(new AgentProposal(
+                AgentAction.TRANSITION_APPLICATION_STATUS,
+                UUID.randomUUID(),
+                ApplicationStatus.APPLIED,
+                LocalDate.of(2026, 9, 25),
+                "agent",
+                null)), "Validated one proposal.");
     }
 }

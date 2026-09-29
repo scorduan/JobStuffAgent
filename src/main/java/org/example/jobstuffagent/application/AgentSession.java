@@ -22,6 +22,8 @@ public final class AgentSession {
     private AgentClassification classification;
     private ApplicationLookupResult lookupResult;
     private AgentPlanningResult planningResult;
+    private AgentProposalValidationResult proposalValidationResult;
+    private List<ToolExecution> toolExecutions = List.of();
     private Instant completedAt;
 
     public AgentSession(UUID id, UUID conversationId, String prompt, Instant startedAt) {
@@ -78,6 +80,14 @@ public final class AgentSession {
         return Optional.ofNullable(completedAt);
     }
 
+    public Optional<AgentProposalValidationResult> proposalValidationResult() {
+        return Optional.ofNullable(proposalValidationResult);
+    }
+
+    public List<ToolExecution> toolExecutions() {
+        return toolExecutions;
+    }
+
     public void beginClassification() {
         transitionFrom(AgentSessionStatus.RECEIVED, AgentSessionStatus.CLASSIFYING);
     }
@@ -113,26 +123,28 @@ public final class AgentSession {
         transitionFrom(AgentSessionStatus.PLANNING, AgentSessionStatus.VALIDATING);
     }
 
-    public void completeValidation() {
+    public void completeValidation(AgentProposalValidationResult validationResult, Instant completedAt) {
+        Objects.requireNonNull(validationResult, "validationResult must not be null");
+        requireStatus(AgentSessionStatus.VALIDATING);
+        this.proposalValidationResult = validationResult;
+        if (!validationResult.valid()) {
+            this.completedAt = Objects.requireNonNull(completedAt, "completedAt must not be null");
+            transitionFrom(AgentSessionStatus.VALIDATING, AgentSessionStatus.FAILED);
+            return;
+        }
         transitionFrom(AgentSessionStatus.VALIDATING, AgentSessionStatus.EXECUTING);
     }
 
-    public void completeExecution(ApplicationLookupResult lookupResult, Instant completedAt) {
-        Objects.requireNonNull(lookupResult, "lookupResult must not be null");
+    public void completeExecution(List<ToolExecution> executions, Instant completedAt) {
+        Objects.requireNonNull(executions, "executions must not be null");
         requireStatus(AgentSessionStatus.EXECUTING);
-        this.lookupResult = lookupResult;
-        this.classification = lookupResult.classification();
+        this.toolExecutions = List.copyOf(executions);
         this.completedAt = Objects.requireNonNull(completedAt, "completedAt must not be null");
-        transitionFrom(AgentSessionStatus.EXECUTING, AgentSessionStatus.COMPLETED);
-    }
-
-    public void failValidation(ApplicationLookupResult lookupResult, Instant completedAt) {
-        Objects.requireNonNull(lookupResult, "lookupResult must not be null");
-        requireStatus(AgentSessionStatus.VALIDATING);
-        this.lookupResult = lookupResult;
-        this.classification = lookupResult.classification();
-        this.completedAt = Objects.requireNonNull(completedAt, "completedAt must not be null");
-        transitionFrom(AgentSessionStatus.VALIDATING, AgentSessionStatus.FAILED);
+        AgentSessionStatus outcome = this.toolExecutions.stream()
+                .allMatch(execution -> execution.status() == ToolExecutionStatus.SUCCEEDED)
+                ? AgentSessionStatus.COMPLETED
+                : AgentSessionStatus.FAILED;
+        transitionFrom(AgentSessionStatus.EXECUTING, outcome);
     }
 
     private void completeNeedingInput(
