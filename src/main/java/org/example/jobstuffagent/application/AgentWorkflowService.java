@@ -148,35 +148,43 @@ public class AgentWorkflowService {
     }
 
     private void execute(AgentSession session, AgentProposalValidationResult validationResult) {
-        if (validationResult.validatedPlan() == null
-                || validationResult.validatedPlan().proposals().isEmpty()) {
+        AgentValidatedPlan plan = validationResult.validatedPlan();
+        if (plan == null || plan.proposals().isEmpty()) {
             session.completeExecution(List.of(), clock.instant());
             return;
         }
 
         List<ToolExecution> executions;
         try {
-            executions = toolExecutor.execute(validationResult.validatedPlan());
+            executions = requireOneExecutionPerProposal(plan, toolExecutor.execute(plan));
         } catch (AccessDeniedException exception) {
             // Authorization failures remain security failures rather than becoming
-            // ordinary workflow results.
+            // ordinary workflow results. Do not persist denied requests here: an
+            // attacker could otherwise create unbounded failed-session records.
             throw exception;
         } catch (RuntimeException exception) {
-            AgentProposal proposal = validationResult.validatedPlan().proposals().getFirst();
+            AgentProposal proposal = plan.proposals().getFirst();
             executions = List.of(new ToolExecution(
                     proposal,
-                    ToolExecutionStatus.FAILED,
+                    ToolExecutionStatus.UNKNOWN,
                     clock.instant(),
-                    executionFailureSummary(exception)));
+                    "The application tool did not report a reliable outcome."));
         }
         session.completeExecution(executions, clock.instant());
     }
 
-    private String executionFailureSummary(RuntimeException exception) {
-        String message = exception.getMessage();
-        return message == null || message.isBlank()
-                ? "The application tool failed during execution."
-                : "The application tool failed during execution: " + message;
+    private List<ToolExecution> requireOneExecutionPerProposal(
+            AgentValidatedPlan plan,
+            List<ToolExecution> executions) {
+        if (executions == null || executions.size() != plan.proposals().size()) {
+            throw new IllegalStateException("The tool returned an incomplete execution result.");
+        }
+        for (int index = 0; index < plan.proposals().size(); index++) {
+            if (!plan.proposals().get(index).equals(executions.get(index).proposal())) {
+                throw new IllegalStateException("The tool returned an execution for an unexpected proposal.");
+            }
+        }
+        return List.copyOf(executions);
     }
 
     private AgentSession createSession(Conversation conversation, String prompt) {

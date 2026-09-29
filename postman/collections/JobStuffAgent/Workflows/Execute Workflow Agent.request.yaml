@@ -3,10 +3,16 @@ method: POST
 url: '{{baseUrl}}/workflows'
 order: 2000
 description: |-
-  Trigger execution of the workflow agent.
+  Deterministically transition one selected application through the workflow agent.
 
-  Returns `200 OK`. Currently returns a placeholder string while the workflow feature is under development.
-  Requires authentication (any authenticated user).
+  Run **Create Application** first, then submit this request with manager credentials.
+  The prompt must identify exactly one application and request a legal lifecycle
+  transition. This example transitions the Create Application fixture from
+  `RECOMMENDED` to `APPLIED`.
+
+  Returns `201 Created` with an `AgentSessionResponse`. Confirm
+  `status: COMPLETED` and `toolExecutions[0].status: SUCCEEDED` before treating
+  the application change as complete. Requires `APPLICATIONS_MANAGER`.
 headers:
   - key: Content-Type
     value: application/json
@@ -15,11 +21,23 @@ headers:
 body:
   type: json
   content: |-
-    {}
+    {
+      "prompt": "Mark my {{workflowCompany}} application as APPLIED"
+    }
 scripts:
   - type: afterResponse
     language: text/javascript
     code: |-
-      pm.test("Status code is 200 OK", function () {
-          pm.response.to.have.status(200);
+      pm.test("Status code is 201 Created", function () {
+          pm.response.to.have.status(201);
+      });
+
+      pm.test("Workflow completed with one successful execution", function () {
+          const json = pm.response.json();
+          pm.expect(json.status).to.eql("COMPLETED");
+          pm.expect(json.proposedActions).to.have.lengthOf(1);
+          pm.expect(json.proposedActions[0].action).to.eql("TRANSITION_APPLICATION_STATUS");
+          pm.expect(json.proposedActions[0].targetStatus).to.eql("APPLIED");
+          pm.expect(json.toolExecutions).to.have.lengthOf(1);
+          pm.expect(json.toolExecutions[0].status).to.eql("SUCCEEDED");
       });

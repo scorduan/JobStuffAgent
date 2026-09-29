@@ -49,14 +49,12 @@ public class ApplicationToolExecutor {
                     ToolExecutionStatus.SUCCEEDED,
                     executedAt,
                     "Transitioned application " + application.id() + " to " + application.status() + ".");
-        } catch (IllegalStateException exception) {
+        } catch (IllegalArgumentException | IllegalStateException exception) {
             return new ToolExecution(
                     proposal,
                     ToolExecutionStatus.FAILED,
                     executedAt,
-                    exception.getMessage() == null
-                            ? "The application transition failed."
-                            : exception.getMessage());
+                    "The application could not be transitioned because its record or state changed.");
         }
     }
 }

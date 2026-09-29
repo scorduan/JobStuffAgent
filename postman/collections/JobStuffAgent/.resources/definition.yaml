@@ -13,6 +13,7 @@ variables:
   basicUsername: manager
   basicPassword: ""
   applicationId: ""
+  workflowCompany: ""
 auth:
   type: basic
   credentials:

@@ -196,7 +196,7 @@ class AgentWorkflowServiceTests {
     }
 
     @Test
-    void recordsUnexpectedToolFailureAndPersistsTheFailedSession() {
+    void recordsAnUnknownToolOutcomeAndPersistsTheFailedSession() {
         InMemoryJobApplicationRepository applicationRepository = new InMemoryJobApplicationRepository();
         JobApplicationService jobApplicationService = new JobApplicationService(
                 applicationRepository, UUID::randomUUID, CLOCK);
@@ -225,11 +225,43 @@ class AgentWorkflowServiceTests {
                 "Mark my Example Co. application as APPLIED")).orElseThrow();
 
         assertEquals(AgentSessionStatus.FAILED, session.status());
-        assertEquals(ToolExecutionStatus.FAILED, session.toolExecutions().getFirst().status());
-        assertTrue(session.toolExecutions().getFirst().summary().contains("tool backend unavailable"));
+        assertEquals(ToolExecutionStatus.UNKNOWN, session.toolExecutions().getFirst().status());
+        assertEquals("The application tool did not report a reliable outcome.",
+                session.toolExecutions().getFirst().summary());
         assertEquals(session.id(), sessionRepository.findById(session.id()).orElseThrow().id());
         assertTrue(conversationRepository.findById(session.conversationId()).orElseThrow()
                 .sessionIds().contains(session.id()));
+    }
+
+    @Test
+    void recordsAnUnknownOutcomeWhenTheToolOmitsTheExecutionResult() {
+        InMemoryJobApplicationRepository applicationRepository = new InMemoryJobApplicationRepository();
+        JobApplicationService jobApplicationService = new JobApplicationService(
+                applicationRepository, UUID::randomUUID, CLOCK);
+        ApplicationToolExecutor incompleteExecutor = new ApplicationToolExecutor(jobApplicationService, CLOCK) {
+            @Override
+            public List<ToolExecution> execute(AgentValidatedPlan plan) {
+                return List.of();
+            }
+        };
+        AgentWorkflowService workflowService = new AgentWorkflowService(
+                new InMemoryConversationRepository(),
+                new InMemoryAgentSessionRepository(),
+                new DeterministicAgentClassifier(),
+                new DeterministicAgentPlanner(CLOCK),
+                new AgentProposalValidator(jobApplicationService),
+                incompleteExecutor,
+                jobApplicationService,
+                CLOCK);
+        jobApplicationService.create(new CreateJobApplicationCommand(
+                "Example Co.", "Java Engineer", null));
+
+        AgentSession session = workflowService.start(new StartWorkflowCommand(
+                null,
+                "Mark my Example Co. application as APPLIED")).orElseThrow();
+
+        assertEquals(AgentSessionStatus.FAILED, session.status());
+        assertEquals(ToolExecutionStatus.UNKNOWN, session.toolExecutions().getFirst().status());
     }
 
     @Test

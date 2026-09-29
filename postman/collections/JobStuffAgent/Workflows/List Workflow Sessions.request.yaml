@@ -3,10 +3,10 @@ method: GET
 url: '{{baseUrl}}/workflows'
 order: 1000
 description: |-
-  List active workflow agent sessions.
+  List workflow sessions created by previous workflow requests.
 
-  Returns `200 OK`. Currently returns a placeholder string while the workflow feature is under development.
-  Requires authentication (any authenticated user).
+  Returns `200 OK` with `AgentSessionResponse` objects. Both local roles may
+  list sessions; execution details are included for completed or failed runs.
 headers:
   - key: Accept
     value: application/json
@@ -16,4 +16,14 @@ scripts:
     code: |-
       pm.test("Status code is 200 OK", function () {
           pm.response.to.have.status(200);
+      });
+
+      pm.test("Response is a JSON array of workflow sessions", function () {
+          const json = pm.response.json();
+          pm.expect(json).to.be.an("array");
+          json.forEach(function (session) {
+              pm.expect(session).to.have.property("sessionId");
+              pm.expect(session).to.have.property("status");
+              pm.expect(session).to.have.property("stateHistory");
+          });
       });
